@@ -6,6 +6,22 @@ const TIMEZONE = 'Asia/Taipei';
 export type AdminPeriod = 'week' | 'month' | 'quarter' | 'year';
 export type LeaderboardLimit = 10 | 20 | 30;
 
+export interface PaginatedTotalLeaderboardRow {
+    lineUserId: string;
+    displayName: string;
+    totalCheckins: number;
+    currentStreak: number;
+    lastCheckinDate: string | null;
+}
+
+export interface PaginatedTotalLeaderboard {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    rows: PaginatedTotalLeaderboardRow[];
+}
+
 interface PeriodRange {
     start: Date;
     end: Date;
@@ -267,5 +283,34 @@ export const getLeaderboardStats = async (period: AdminPeriod, limit: Leaderboar
     return {
         totals: totalsRes.rows,
         streaks: streaksData
+    };
+};
+
+export const getAllUsersTotalCheckins = async (page = 1, limit = 20): Promise<PaginatedTotalLeaderboard> => {
+    const offset = (page - 1) * limit;
+
+    const countRes = await db.query('SELECT COUNT(*) AS total FROM users');
+    const total = parseInt(countRes.rows[0]?.total || '0', 10);
+
+    const { rows } = await db.query(
+        `SELECT line_user_id, display_name, total_checkins, current_streak, last_checkin_date
+         FROM users
+         ORDER BY total_checkins DESC, current_streak DESC, display_name ASC, line_user_id ASC
+         LIMIT $1 OFFSET $2`,
+        [limit, offset]
+    );
+
+    return {
+        total,
+        page,
+        limit,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+        rows: rows.map((row) => ({
+            lineUserId: row.line_user_id,
+            displayName: row.display_name || 'Unknown',
+            totalCheckins: Number(row.total_checkins || 0),
+            currentStreak: Number(row.current_streak || 0),
+            lastCheckinDate: row.last_checkin_date || null
+        }))
     };
 };

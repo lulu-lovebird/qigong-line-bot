@@ -28,5 +28,9 @@ export const en = {
     review: 'Review',
     method_name: 'Method',
     matched_days: 'Matched Days',
-    journal_feed: 'Journal Feed'
+    journal_feed: 'Journal Feed',
+    total_checkins_full_list: 'Total Check-ins (All Users)',
+    last_checkin_date: 'Last Check-in',
+    previous_page: 'Previous',
+    next_page: 'Next'
 };

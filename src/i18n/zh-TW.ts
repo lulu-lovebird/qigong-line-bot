@@ -28,5 +28,9 @@ export const zhTW = {
     review: '練功點評',
     method_name: '功法',
     matched_days: '命中天數',
-    journal_feed: '學員心得流'
+    journal_feed: '學員心得流',
+    total_checkins_full_list: '總打卡天數（全員榜）',
+    last_checkin_date: '最近打卡日',
+    previous_page: '上一頁',
+    next_page: '下一頁'
 };

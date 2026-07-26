@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getOverviewStats, getLeaderboardStats, AdminPeriod, getAdminPeriodRange, LeaderboardLimit } from '../services/adminStats';
+import { getOverviewStats, getLeaderboardStats, getAllUsersTotalCheckins, AdminPeriod, getAdminPeriodRange, LeaderboardLimit } from '../services/adminStats';
 import moment from 'moment-timezone';
 
 const router = Router();
@@ -12,6 +12,11 @@ const parseLeaderboardLimit = (value: unknown): LeaderboardLimit => {
     const parsed = Number(value);
     if (parsed === 20 || parsed === 30) return parsed;
     return 10;
+};
+
+const parsePage = (value: unknown) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 };
 
 // Overview Page
@@ -40,9 +45,13 @@ router.get('/', async (req, res) => {
 router.get('/leaderboard', async (req, res) => {
     const period = isValidPeriod(req.query.period) ? req.query.period : 'week';
     const currentLimit = parseLeaderboardLimit(req.query.limit);
+    const totalsPage = parsePage(req.query.page);
     
     try {
-        const data = await getLeaderboardStats(period, currentLimit);
+        const [data, totalsData] = await Promise.all([
+            getLeaderboardStats(period, currentLimit),
+            getAllUsersTotalCheckins(totalsPage, 20)
+        ]);
         const range = getAdminPeriodRange(period);
         
         res.render('admin/leaderboard', {
@@ -50,6 +59,7 @@ router.get('/leaderboard', async (req, res) => {
             lang: req.langCode,
             currentPeriod: period,
             currentLimit,
+            totalsData,
             dateRange: `${moment(range.start).format('YYYY-MM-DD')} ~ ${moment(range.end).subtract(1, 'ms').format('YYYY-MM-DD')}`,
             data,
             path: '/line/admin-dashboard/leaderboard'
