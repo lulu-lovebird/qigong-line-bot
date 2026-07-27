@@ -310,7 +310,7 @@ export const getAllUsersTotalCheckins = async (page = 1, limit = 20): Promise<Pa
             displayName: row.display_name || 'Unknown',
             totalCheckins: Number(row.total_checkins || 0),
             currentStreak: Number(row.current_streak || 0),
-            lastCheckinDate: row.last_checkin_date || null
+            lastCheckinDate: row.last_checkin_date ? moment.tz(row.last_checkin_date, TIMEZONE).format('YYYY-MM-DD') : null
         }))
     };
 };
