@@ -22,6 +22,23 @@ export interface PaginatedTotalLeaderboard {
     rows: PaginatedTotalLeaderboardRow[];
 }
 
+export interface AdminBadgeRecipient {
+    lineUserId: string;
+    displayName: string;
+    earnedYears: number[];
+    needsDisambiguation: boolean;
+}
+
+export interface AdminAchievementBadge {
+    id: string;
+    name: string;
+    emoji: string;
+    description: string;
+    category: string;
+    recipientCount: number;
+    recipients: AdminBadgeRecipient[];
+}
+
 interface PeriodRange {
     start: Date;
     end: Date;
@@ -313,4 +330,89 @@ export const getAllUsersTotalCheckins = async (page = 1, limit = 20): Promise<Pa
             lastCheckinDate: row.last_checkin_date ? moment.tz(row.last_checkin_date, TIMEZONE).format('YYYY-MM-DD') : null
         }))
     };
+};
+
+export const getAdminAchievements = async (): Promise<AdminAchievementBadge[]> => {
+    const { rows } = await db.query(`
+        WITH recipient_awards AS (
+            SELECT
+                ub.badge_id,
+                ub.line_user_id,
+                ARRAY_AGG(DISTINCT ub.earned_year ORDER BY ub.earned_year)
+                    FILTER (WHERE ub.earned_year <> 0) AS earned_years
+            FROM user_badges ub
+            GROUP BY ub.badge_id, ub.line_user_id
+        )
+        SELECT
+            b.id,
+            b.name,
+            b.emoji,
+            b.description,
+            b.category,
+            ra.line_user_id,
+            NULLIF(BTRIM(u.display_name), '') AS display_name,
+            ra.earned_years
+        FROM badges b
+        LEFT JOIN recipient_awards ra ON ra.badge_id = b.id
+        LEFT JOIN users u ON u.line_user_id = ra.line_user_id
+        ORDER BY
+            CASE b.category
+                WHEN 'STREAK' THEN 1
+                WHEN 'TOTAL' THEN 2
+                WHEN 'TIME_BASED' THEN 3
+                WHEN 'SEASONAL' THEN 4
+                WHEN 'COMBO' THEN 5
+                WHEN 'METHOD_DAYS' THEN 6
+                ELSE 99
+            END,
+            REGEXP_REPLACE(b.id, '_[0-9]+$', ''),
+            COALESCE(NULLIF(SUBSTRING(b.id FROM '_([0-9]+)$'), '')::integer, 0),
+            b.id,
+            COALESCE(NULLIF(BTRIM(u.display_name), ''), ''),
+            ra.line_user_id
+    `);
+
+    const badges = new Map<string, AdminAchievementBadge>();
+
+    for (const row of rows) {
+        let badge = badges.get(row.id);
+        if (!badge) {
+            badge = {
+                id: row.id,
+                name: row.name,
+                emoji: row.emoji || '',
+                description: row.description || '',
+                category: row.category || '',
+                recipientCount: 0,
+                recipients: []
+            };
+            badges.set(row.id, badge);
+        }
+
+        if (row.line_user_id) {
+            badge.recipients.push({
+                lineUserId: row.line_user_id,
+                displayName: row.display_name || '',
+                earnedYears: Array.isArray(row.earned_years)
+                    ? row.earned_years.map((year: number | string) => Number(year)).filter(Number.isFinite)
+                    : [],
+                needsDisambiguation: false
+            });
+        }
+    }
+
+    for (const badge of badges.values()) {
+        const nameCounts = new Map<string, number>();
+        for (const recipient of badge.recipients) {
+            const key = recipient.displayName.trim().toLocaleLowerCase();
+            if (key) nameCounts.set(key, (nameCounts.get(key) || 0) + 1);
+        }
+        for (const recipient of badge.recipients) {
+            const key = recipient.displayName.trim().toLocaleLowerCase();
+            recipient.needsDisambiguation = !key || (nameCounts.get(key) || 0) > 1;
+        }
+        badge.recipientCount = badge.recipients.length;
+    }
+
+    return Array.from(badges.values());
 };

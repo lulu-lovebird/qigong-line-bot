@@ -32,5 +32,16 @@ export const en = {
     total_checkins_full_list: 'Total Check-ins (All Users)',
     last_checkin_date: 'Last Check-in',
     previous_page: 'Previous',
-    next_page: 'Next'
+    next_page: 'Next',
+    achievements_leaderboard: 'Achievements',
+    achievement_catalog_summary: '{count} achievements in total. Select a learner to view their method analysis.',
+    badge_recipient_count: '{count} recipients',
+    no_badge_recipients: 'No learners have earned this badge yet',
+    unknown_user: 'Unknown learner',
+    badge_category_streak: 'Check-in Streaks',
+    badge_category_total: 'Total Check-ins',
+    badge_category_time_based: 'Time Challenges',
+    badge_category_seasonal: 'Seasonal Challenges',
+    badge_category_combo: 'Method Sets',
+    badge_category_method_days: 'Method Milestones'
 };

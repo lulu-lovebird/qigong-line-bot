@@ -32,5 +32,16 @@ export const zhTW = {
     total_checkins_full_list: '總打卡天數（全員榜）',
     last_checkin_date: '最近打卡日',
     previous_page: '上一頁',
-    next_page: '下一頁'
+    next_page: '下一頁',
+    achievements_leaderboard: '成就榜',
+    achievement_catalog_summary: '共 {count} 個成就，點擊學員姓名可查看個人功法分析。',
+    badge_recipient_count: '{count} 位得主',
+    no_badge_recipients: '尚無學員取得',
+    unknown_user: '未知學員',
+    badge_category_streak: '連續打卡',
+    badge_category_total: '累計打卡',
+    badge_category_time_based: '時段挑戰',
+    badge_category_seasonal: '節氣挑戰',
+    badge_category_combo: '全套功法',
+    badge_category_method_days: '功法里程碑'
 };

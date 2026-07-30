@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getOverviewStats, getLeaderboardStats, getAllUsersTotalCheckins, AdminPeriod, getAdminPeriodRange, LeaderboardLimit } from '../services/adminStats';
+import { getOverviewStats, getLeaderboardStats, getAllUsersTotalCheckins, getAdminAchievements, AdminPeriod, getAdminPeriodRange, LeaderboardLimit } from '../services/adminStats';
 import moment from 'moment-timezone';
 
 const router = Router();
@@ -83,6 +83,33 @@ router.get('/journal', async (req, res) => {
         });
     } catch (e) {
         console.error('Error rendering admin journal page:', e);
+        res.status(500).send('Server Error');
+    }
+});
+
+router.get('/achievements', async (req, res) => {
+    try {
+        const badges = await getAdminAchievements();
+        const categoryGroups = Array.from(
+            badges.reduce((groups, badge) => {
+                const categoryBadges = groups.get(badge.category) || [];
+                categoryBadges.push(badge);
+                groups.set(badge.category, categoryBadges);
+                return groups;
+            }, new Map<string, typeof badges>())
+        ).map(([category, categoryBadges]) => ({ category, badges: categoryBadges }));
+
+        res.render('admin/achievements', {
+            i18n: req.i18n,
+            lang: req.langCode,
+            currentPeriod: 'week',
+            dateRange: '',
+            totalBadges: badges.length,
+            categoryGroups,
+            path: '/line/admin-dashboard/achievements'
+        });
+    } catch (e) {
+        console.error('Error rendering admin achievements page:', e);
         res.status(500).send('Server Error');
     }
 });

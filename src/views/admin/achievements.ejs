@@ -1,0 +1,76 @@
+<%- include('../partials/header') %>
+
+<style>
+    .achievement-section { margin-bottom: 2.5rem; }
+    .achievement-card { border: 0; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); height: 100%; }
+    .achievement-emoji { font-size: 2.25rem; line-height: 1; }
+    .recipient-list { max-height: 260px; overflow-y: auto; }
+    .recipient-chip { background: #f1f3f5; border-radius: 999px; padding: 0.4rem 0.75rem; }
+    .recipient-chip:hover { background: #e7f1ff; }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <p class="text-muted mb-0"><%= i18n.achievement_catalog_summary.replace('{count}', totalBadges) %></p>
+</div>
+
+<% categoryGroups.forEach(function(group) { %>
+    <% const categoryLabels = {
+        STREAK: i18n.badge_category_streak,
+        TOTAL: i18n.badge_category_total,
+        TIME_BASED: i18n.badge_category_time_based,
+        SEASONAL: i18n.badge_category_seasonal,
+        COMBO: i18n.badge_category_combo,
+        METHOD_DAYS: i18n.badge_category_method_days
+    }; %>
+    <section class="achievement-section">
+        <div class="d-flex align-items-center gap-2 mb-3">
+            <h4 class="mb-0"><%= categoryLabels[group.category] || group.category %></h4>
+            <span class="badge text-bg-secondary"><%= group.badges.length %></span>
+        </div>
+        <div class="row g-4">
+            <% group.badges.forEach(function(badge) { %>
+                <div class="col-12 col-xl-6">
+                    <article class="card achievement-card">
+                        <div class="card-body p-4">
+                            <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+                                <div class="d-flex align-items-center gap-3">
+                                    <div class="achievement-emoji"><%= badge.emoji %></div>
+                                    <div>
+                                        <h5 class="card-title mb-1"><%= badge.name %></h5>
+                                        <span class="badge text-bg-light border"><%= categoryLabels[group.category] || group.category %></span>
+                                    </div>
+                                </div>
+                                <span class="badge rounded-pill text-bg-primary"><%= i18n.badge_recipient_count.replace('{count}', badge.recipientCount) %></span>
+                            </div>
+                            <p class="card-text text-muted"><%= badge.description %></p>
+                            <hr>
+                            <% if (badge.recipients.length === 0) { %>
+                                <p class="text-muted mb-0"><%= i18n.no_badge_recipients %></p>
+                            <% } else { %>
+                                <div class="recipient-list d-flex flex-wrap gap-2">
+                                    <% badge.recipients.forEach(function(recipient) { %>
+                                        <% const displayName = recipient.displayName || i18n.unknown_user; %>
+                                        <a
+                                            href="/line/admin-dashboard/method-analysis?period=30d&lang=<%= lang %>&userId=<%= encodeURIComponent(recipient.lineUserId) %>&name=<%= encodeURIComponent(displayName) %>"
+                                            class="recipient-chip text-decoration-none text-dark"
+                                        >
+                                            <span class="fw-semibold"><%= displayName %></span>
+                                            <% if (recipient.needsDisambiguation) { %>
+                                                <small class="text-muted">(…<%= recipient.lineUserId.slice(-6) %>)</small>
+                                            <% } %>
+                                            <% if (recipient.earnedYears.length > 0) { %>
+                                                <small class="text-primary">(<%= recipient.earnedYears.join('、') %>)</small>
+                                            <% } %>
+                                        </a>
+                                    <% }); %>
+                                </div>
+                            <% } %>
+                        </div>
+                    </article>
+                </div>
+            <% }); %>
+        </div>
+    </section>
+<% }); %>
+
+<%- include('../partials/footer') %>

@@ -28,6 +28,7 @@
                 <a href="/line/admin-dashboard/leaderboard?period=<%= currentPeriod %>&lang=<%= lang %>" class="<%= path === '/line/admin-dashboard/leaderboard' ? 'active' : '' %>"><%= i18n.leaderboard %></a>
                 <a href="/line/admin-dashboard/method-analysis?period=30d&lang=<%= lang %>" class="<%= path === '/line/admin-dashboard/method-analysis' ? 'active' : '' %>"><%= i18n.method_analysis %></a>
                 <a href="/line/admin-dashboard/journal?lang=<%= lang %>" class="<%= path === '/line/admin-dashboard/journal' ? 'active' : '' %>"><%= i18n.journal_feed %></a>
+                <a href="/line/admin-dashboard/achievements?lang=<%= lang %>" class="<%= path === '/line/admin-dashboard/achievements' ? 'active' : '' %>"><%= i18n.achievements_leaderboard %></a>
                 
                 <hr class="border-secondary mx-3">
                 <div class="px-3">
@@ -46,16 +47,17 @@
                         <% if (path === '/line/admin-dashboard/leaderboard') { %><%= i18n.leaderboard %><% } %>
                         <% if (path === '/line/admin-dashboard/method-analysis') { %><%= i18n.method_analysis %><% } %>
                         <% if (path === '/line/admin-dashboard/journal') { %><%= i18n.journal_feed %><% } %>
-                        <small class="text-muted fs-5">(<%= dateRange %>)</small>
+                        <% if (path === '/line/admin-dashboard/achievements') { %><%= i18n.achievements_leaderboard %><% } %>
+                        <% if (dateRange) { %><small class="text-muted fs-5">(<%= dateRange %>)</small><% } %>
                     </h2>
-                    <% if (path !== '/line/admin-dashboard/method-analysis' && path !== '/line/admin-dashboard/journal') { %>
+                    <% if (path === '/line/admin-dashboard' || path === '/line/admin-dashboard/leaderboard') { %>
                     <div class="btn-group" role="group">
                         <a href="?period=week&lang=<%= lang %>" class="btn btn-outline-primary <%= currentPeriod === 'week' ? 'active' : '' %>"><%= i18n.period_week %></a>
                         <a href="?period=month&lang=<%= lang %>" class="btn btn-outline-primary <%= currentPeriod === 'month' ? 'active' : '' %>"><%= i18n.period_month %></a>
                         <a href="?period=quarter&lang=<%= lang %>" class="btn btn-outline-primary <%= currentPeriod === 'quarter' ? 'active' : '' %>"><%= i18n.period_quarter %></a>
                         <a href="?period=year&lang=<%= lang %>" class="btn btn-outline-primary <%= currentPeriod === 'year' ? 'active' : '' %>"><%= i18n.period_year %></a>
                     </div>
-                    <% } else { %>
+                    <% } else if (path === '/line/admin-dashboard/method-analysis') { %>
                     <div class="btn-group" role="group">
                         <a href="?period=30d&lang=<%= lang %>" class="btn btn-outline-primary <%= currentPeriod === '30d' ? 'active' : '' %>"><%= i18n.recent_30_days %></a>
                         <a href="?period=90d&lang=<%= lang %>" class="btn btn-outline-primary <%= currentPeriod === '90d' ? 'active' : '' %>"><%= i18n.recent_90_days %></a>
