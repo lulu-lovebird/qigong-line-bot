@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && cp -r src/views dist/"
+    "build": "tsc && cp -r src/views dist/",
+    "test:sanfu": "tsx tests/sanfu.test.ts"
   },
   "keywords": [],
   "author": "",

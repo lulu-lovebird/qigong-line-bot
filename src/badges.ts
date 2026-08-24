@@ -159,7 +159,7 @@ export const evaluateBadges = async (userId: string, text: string, selectedMetho
     };
 
     const sanFuPeriod = getSanFuPeriod(currentYear);
-    if (sanFuPeriod && now.isSame(sanFuPeriod.end, 'day')) {
+    if (sanFuPeriod && now.isSameOrAfter(sanFuPeriod.end, 'day')) {
         if (!(await hasEarnedBadge(userId, 'seasonal_summer_27', currentYear))) {
             const { rows } = await db.query(
                 `SELECT COUNT(DISTINCT COALESCE(checkin_date, DATE(created_at AT TIME ZONE $1))) AS count

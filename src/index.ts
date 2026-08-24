@@ -15,6 +15,7 @@ import adminMethodAnalysisPagesRoutes from './routes/adminMethodAnalysisPages';
 import liffApiRoutes from './routes/liffApi';
 import liffPagesRoutes from './routes/liffPages';
 import { setupErrorLogging } from './logger';
+import { setupSanFuBadgeReconciliation } from './services/sanfuBadges';
 
 dotenv.config();
 setupErrorLogging('qigong-line-bot');
@@ -77,4 +78,5 @@ app.listen(PORT, () => {
     } else {
         console.log('LINE daily reminder cron disabled');
     }
+    setupSanFuBadgeReconciliation();
 });

@@ -319,7 +319,10 @@ If you already use the hierarchical practice-method setup, also run the latest m
 
 ```bash
 docker exec -i qigong_db psql -U qigong_user -d qigong_bot < migrations/007_line_add_songjing_method.sql
+docker exec -i qigong_db psql -U qigong_user -d qigong_bot < migrations/010_line_backfill_2026_sanfu_badge.sql
 ```
+
+Migration 010 idempotently awards the 2026 `夏練三伏` badge to users who checked in on all 40 days from July 15 through August 23. The service also reconciles the latest completed Sanfu period at startup and daily at 00:10 Asia/Taipei.
 
 This migration adds:
 
