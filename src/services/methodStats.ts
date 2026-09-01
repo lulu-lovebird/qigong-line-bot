@@ -75,11 +75,11 @@ export const getMethodPeriodRange = (period: MethodPeriod): PeriodRange => {
 
     switch (period) {
         case '30d':
-            start = now.clone().subtract(30, 'days').startOf('day');
+            start = now.clone().subtract(29, 'days').startOf('day');
             end = now.clone().add(1, 'millisecond'); // Up to now
             break;
         case '90d':
-            start = now.clone().subtract(90, 'days').startOf('day');
+            start = now.clone().subtract(89, 'days').startOf('day');
             end = now.clone().add(1, 'millisecond');
             break;
         case 'month':
@@ -95,7 +95,7 @@ export const getMethodPeriodRange = (period: MethodPeriod): PeriodRange => {
             end = now.clone().endOf('year').add(1, 'millisecond');
             break;
         default:
-            start = now.clone().subtract(30, 'days').startOf('day');
+            start = now.clone().subtract(29, 'days').startOf('day');
             end = now.clone().add(1, 'millisecond');
             break;
     }
@@ -189,7 +189,7 @@ export const getUserMethodAnalysis = async (userId: string, period: MethodPeriod
     const { start, end } = getMethodPeriodRange(period);
 
     const totalDaysQuery = `
-        SELECT COUNT(DISTINCT DATE(created_at AT TIME ZONE $1)) AS total_checkin_days
+        SELECT COUNT(DISTINCT COALESCE(checkin_date, DATE(created_at AT TIME ZONE $1))) AS total_checkin_days
         FROM checkin_logs
         WHERE line_user_id = $2 AND created_at >= $3 AND created_at < $4
     `;

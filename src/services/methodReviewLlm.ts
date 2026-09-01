@@ -6,6 +6,7 @@ type MethodMixInput = {
     methods: Array<{
         methodName: string;
         matchedDays: number;
+        attendanceRatio: number;
         compositionRatio: number;
     }>;
 };
@@ -13,7 +14,11 @@ type MethodMixInput = {
 const buildPrompt = (analysis30d: MethodMixInput) => {
     const methodLines = (analysis30d.methods || [])
         .slice(0, 8)
-        .map((method) => `- ${method.methodName}：${method.matchedDays}次（${(method.compositionRatio * 100).toFixed(1)}%）`)
+        .map((method) => [
+            `- ${method.methodName}：出現於 ${method.matchedDays} 個打卡日`,
+            `占總打卡日 ${(method.attendanceRatio * 100).toFixed(1)}%`,
+            `占功法配置 ${(method.compositionRatio * 100).toFixed(1)}%`
+        ].join('；'))
         .join('\n');
 
     return {
@@ -26,15 +31,20 @@ const buildPrompt = (analysis30d: MethodMixInput) => {
             '3. 語氣溫和、鼓勵、具體',
             '4. 只根據提供的資料做判斷，不要虛構',
             '5. 重點放在功法配置、持續性、平衡性與下一步方向',
-            '6. 直接輸出建議，不要加標題'
+            '6. 「總打卡天數」是唯一代表學員整體打卡幾天的數字',
+            '7. 單一功法的打卡日數不等於總打卡天數，不得用它代替總打卡天數',
+            '8. 同一天可以修練多個功法，因此功法日次總和可能大於總打卡天數',
+            '9. 若提到整體打卡天數，必須原樣使用資料中的總打卡天數，不得自行推算',
+            '10. 不提供醫療診斷或療效承諾',
+            '11. 直接輸出建議，不要加標題'
         ].join('\n'),
         user: [
             '以下是學員近30天主功法分布資料：',
             '',
-            `總打卡天數：${analysis30d.totalCheckinDays || 0}`,
-            `功法分布總次數：${analysis30d.totalMatchedMethodDays || 0}`,
+            `學員實際總打卡天數（權威值）：${analysis30d.totalCheckinDays || 0} 天`,
+            `所有功法累計出現日次（不是總打卡天數）：${analysis30d.totalMatchedMethodDays || 0} 日次`,
             '',
-            '主功法分布：',
+            '主功法明細：',
             methodLines || '- 無資料',
             '',
             '請根據以上資料，用200字內給出接下來的練功指引。'
