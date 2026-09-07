@@ -178,25 +178,27 @@
     const renderJournal = (entries) => {
       const container = document.getElementById('journalList');
       if (!entries || entries.length === 0) {
-        container.innerHTML = '<div class="empty">目前沒有可顯示的心得或身體感受。</div>';
+        container.innerHTML = '<div class="empty">目前沒有可顯示的練功心得與感受。</div>';
         return;
       }
-      container.innerHTML = entries.map((entry) => `
+      container.innerHTML = entries.map((entry) => {
+        const reflection = String(entry.reflectionNote || '').trim();
+        const bodyFeeling = String(entry.bodyFeelingNote || '').trim();
+        const legacyNote = reflection && bodyFeeling ? `練功心得：${reflection}\n身體感受：${bodyFeeling}` : reflection || bodyFeeling;
+        const practiceNote = entry.practiceNote || legacyNote;
+        return `
         <div class="journal-entry">
           <div><strong>${escapeHtml(formatLocalDateTime(entry.recordedAt || entry.date))}</strong></div>
           <div style="margin-top:8px;">${(entry.methodNames || []).map((name) => `<span class="tag">${escapeHtml(name)}</span>`).join('')}</div>
           <div class="note-grid">
             <div class="note-box">
-              <div class="note-label">練功心得</div>
-              <div>${escapeHtml(entry.reflectionNote || '未填寫')}</div>
-            </div>
-            <div class="note-box">
-              <div class="note-label">身體感受</div>
-              <div>${escapeHtml(entry.bodyFeelingNote || '未填寫')}</div>
+              <div class="note-label">練功心得與感受</div>
+              <div style="white-space:pre-wrap;">${escapeHtml(practiceNote || '未填寫')}</div>
             </div>
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
     };
 
     const init = async () => {

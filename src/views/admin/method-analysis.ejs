@@ -171,29 +171,23 @@
 
     const renderJournal = (entries) => {
         if (!entries || entries.length === 0) {
-            journalList.innerHTML = '<p class="text-muted small m-0">目前沒有可顯示的心得或身體感受。</p>';
+            journalList.innerHTML = '<p class="text-muted small m-0">目前沒有可顯示的練功心得與感受。</p>';
             return;
         }
 
         journalList.innerHTML = entries.map((entry) => {
             const methods = (entry.methodNames || []).map((name) => `<span class="badge text-bg-light border me-1 mb-1">${escapeHtml(name)}</span>`).join('');
+            const reflection = String(entry.reflectionNote || '').trim();
+            const bodyFeeling = String(entry.bodyFeelingNote || '').trim();
+            const legacyNote = reflection && bodyFeeling ? `練功心得：${reflection}\n身體感受：${bodyFeeling}` : reflection || bodyFeeling;
+            const practiceNote = entry.practiceNote || legacyNote;
             return `
                 <div class="border rounded p-3 mb-3 bg-white">
                     <div class="fw-bold mb-2">${escapeHtml(formatLocalDateTime(entry.recordedAt || entry.date))}</div>
                     <div class="mb-2">${methods || '<span class="text-muted small">未記錄功法</span>'}</div>
-                    <div class="row g-2">
-                        <div class="col-md-6">
-                            <div class="bg-light rounded p-2 h-100">
-                                <div class="text-muted small fw-bold mb-1">練功心得</div>
-                                <div>${escapeHtml(entry.reflectionNote || '未填寫')}</div>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="bg-light rounded p-2 h-100">
-                                <div class="text-muted small fw-bold mb-1">身體感受</div>
-                                <div>${escapeHtml(entry.bodyFeelingNote || '未填寫')}</div>
-                            </div>
-                        </div>
+                    <div class="bg-light rounded p-2">
+                        <div class="text-muted small fw-bold mb-1">練功心得與感受</div>
+                        <div style="white-space: pre-wrap;">${escapeHtml(practiceNote || '未填寫')}</div>
                     </div>
                 </div>
             `;

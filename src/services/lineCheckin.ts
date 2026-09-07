@@ -30,6 +30,7 @@ export interface TodayLineCheckinResponse {
     alreadyCheckedIn: boolean;
     checkinLogId: number | null;
     selectedMethodIds: number[];
+    practiceNote: string;
     reflectionNote: string;
     bodyFeelingNote: string;
 }
@@ -141,7 +142,7 @@ export const getLeafCodesByParentCode = async (): Promise<Map<string, string[]>>
 export const getTodayLineCheckin = async (lineUserId: string): Promise<TodayLineCheckinResponse> => {
     const today = moment().tz(TIMEZONE).format('YYYY-MM-DD');
     const { rows } = await db.queryWithRetry(
-        `SELECT id, reflection_note, body_feeling_note
+        `SELECT id, practice_note, reflection_note, body_feeling_note
          FROM checkin_logs
          WHERE line_user_id = $1 AND checkin_date = $2`,
         [lineUserId, today]
@@ -153,6 +154,7 @@ export const getTodayLineCheckin = async (lineUserId: string): Promise<TodayLine
             alreadyCheckedIn: false,
             checkinLogId: null,
             selectedMethodIds: [],
+            practiceNote: '',
             reflectionNote: '',
             bodyFeelingNote: ''
         };
@@ -173,29 +175,36 @@ export const getTodayLineCheckin = async (lineUserId: string): Promise<TodayLine
         methodRows
     );
 
+    const practiceNote = checkin.practice_note || mergeLegacyPracticeNotes(checkin.reflection_note, checkin.body_feeling_note);
     return {
         date: today,
         alreadyCheckedIn: true,
         checkinLogId: checkin.id,
         selectedMethodIds: normalizedSelectedIds,
+        practiceNote,
         reflectionNote: checkin.reflection_note || '',
         bodyFeelingNote: checkin.body_feeling_note || ''
     };
 };
 
-const buildLegacyNote = (methodNames: string[], reflectionNote: string, bodyFeelingNote: string) => {
+export const mergeLegacyPracticeNotes = (reflectionNote = '', bodyFeelingNote = '') => {
+    const reflection = reflectionNote.trim();
+    const bodyFeeling = bodyFeelingNote.trim();
+    if (reflection && bodyFeeling) return `練功心得：${reflection}\n身體感受：${bodyFeeling}`;
+    return reflection || bodyFeeling;
+};
+
+export const buildLegacyNote = (methodNames: string[], practiceNote = '') => {
     const parts: string[] = [];
     if (methodNames.length > 0) parts.push(`功法：${methodNames.join('、')}`);
-    if (reflectionNote.trim()) parts.push(`心得：${reflectionNote.trim()}`);
-    if (bodyFeelingNote.trim()) parts.push(`身體感受：${bodyFeelingNote.trim()}`);
+    if (practiceNote.trim()) parts.push(`心得與感受：${practiceNote.trim()}`);
     return parts.join('；');
 };
 
 export const saveTodayLineCheckin = async (
     lineUserId: string,
     methodIds: number[],
-    reflectionNote: string,
-    bodyFeelingNote: string
+    practiceNote: string
 ) => {
     const uniqueMethodIds = Array.from(new Set(methodIds.filter((id) => Number.isFinite(id) && id > 0)));
 
@@ -229,7 +238,7 @@ export const saveTodayLineCheckin = async (
 
         const methodNames = methodRows.rows.map((row) => row.name_zh);
         const methodCodes = methodRows.rows.map((row) => row.code);
-        const note = buildLegacyNote(methodNames, reflectionNote, bodyFeelingNote);
+        const note = buildLegacyNote(methodNames, practiceNote);
 
         const existing = await client.query(
             `SELECT id
@@ -248,13 +257,14 @@ export const saveTodayLineCheckin = async (
 
             await client.query(
                 `UPDATE checkin_logs
-                 SET reflection_note = $1,
-                     body_feeling_note = $2,
-                     note = $3,
+                 SET practice_note = $1,
+                     reflection_note = $1,
+                     body_feeling_note = NULL,
+                     note = $2,
                      source = 'liff',
                      updated_at = CURRENT_TIMESTAMP
-                 WHERE id = $4`,
-                [reflectionNote || null, bodyFeelingNote || null, note || null, checkinLogId]
+                 WHERE id = $3`,
+                [practiceNote || null, note || null, checkinLogId]
             );
 
             await client.query(`DELETE FROM checkin_method_selections WHERE checkin_log_id = $1`, [checkinLogId]);
@@ -276,10 +286,10 @@ export const saveTodayLineCheckin = async (
             const user = userRes.rows[0] || { current_streak: 0, longest_streak: 0, last_checkin_date: null, total_checkins: 0 };
 
             const inserted = await client.query(
-                `INSERT INTO checkin_logs (line_user_id, checkin_date, reflection_note, body_feeling_note, note, source)
-                 VALUES ($1, $2, $3, $4, $5, 'liff')
+                `INSERT INTO checkin_logs (line_user_id, checkin_date, practice_note, reflection_note, body_feeling_note, note, source)
+                 VALUES ($1, $2, $3, $3, NULL, $4, 'liff')
                  RETURNING id`,
-                [lineUserId, todayStr, reflectionNote || null, bodyFeelingNote || null, note || null]
+                [lineUserId, todayStr, practiceNote || null, note || null]
             );
             checkinLogId = inserted.rows[0].id;
 
@@ -335,6 +345,6 @@ export const saveTodayLineCheckin = async (
 };
 
 export const evaluateLineLiffBadges = async (lineUserId: string, selectedMethods: string[], selectedMethodCodes: string[] = []) => {
-    const note = buildLegacyNote(selectedMethods, '', '');
+    const note = buildLegacyNote(selectedMethods);
     await evaluateBadges(lineUserId, note, selectedMethodCodes);
 };

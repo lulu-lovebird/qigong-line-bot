@@ -23,7 +23,7 @@
     .history-date { font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 6px; }
     .history-methods { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
     .method-tag { background: #ecfdf5; color: #065f46; border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 500; }
-    .history-note { font-size: 13px; color: #6b7280; line-height: 1.5; }
+    .history-note { font-size: 13px; color: #6b7280; line-height: 1.5; white-space: pre-wrap; }
     .history-note strong { color: #374151; }
     .badge-card-title { font-size: 16px; font-weight: 700; margin: 0 0 12px; }
     .badge-list { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -102,6 +102,20 @@
       return days[d.getDay()];
     };
 
+    const escapeHtml = (value) => String(value || '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+
+    const mergeLegacyNotes = (entry) => {
+      const reflection = String(entry.reflectionNote || '').trim();
+      const bodyFeeling = String(entry.bodyFeelingNote || '').trim();
+      if (reflection && bodyFeeling) return `練功心得：${reflection}\n身體感受：${bodyFeeling}`;
+      return reflection || bodyFeeling;
+    };
+
     const renderHistory = (data) => {
       monthLabel.textContent = data.monthLabel;
       const now = new Date();
@@ -132,10 +146,10 @@
         const methodsHtml = entry.methodNames && entry.methodNames.length > 0
           ? `<div class="history-methods">${entry.methodNames.map((m) => `<span class="method-tag">${m}</span>`).join('')}</div>`
           : '';
-        const notesHtml = [];
-        if (entry.reflectionNote) notesHtml.push(`<div><strong>心得：</strong>${entry.reflectionNote}</div>`);
-        if (entry.bodyFeelingNote) notesHtml.push(`<div><strong>感受：</strong>${entry.bodyFeelingNote}</div>`);
-        const noteHtml = notesHtml.length > 0 ? `<div class="history-note">${notesHtml.join('')}</div>` : '';
+        const practiceNote = entry.practiceNote || mergeLegacyNotes(entry);
+        const noteHtml = practiceNote
+          ? `<div class="history-note"><strong>心得與感受：</strong>${escapeHtml(practiceNote)}</div>`
+          : '';
 
         return `
           <div class="history-item">

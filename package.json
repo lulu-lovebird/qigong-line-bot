@@ -7,6 +7,7 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "build": "tsc && cp -r src/views dist/",
+    "test": "tsx --test tests/*.test.ts",
     "test:sanfu": "tsx tests/sanfu.test.ts"
   },
   "keywords": [],

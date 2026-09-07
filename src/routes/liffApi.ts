@@ -1,5 +1,5 @@
 import { Request, Router } from 'express';
-import { getPracticeMethods, getTodayLineCheckin, saveTodayLineCheckin, upsertLineUser, evaluateLineLiffBadges } from '../services/lineCheckin';
+import { getPracticeMethods, getTodayLineCheckin, saveTodayLineCheckin, upsertLineUser, evaluateLineLiffBadges, mergeLegacyPracticeNotes } from '../services/lineCheckin';
 import { db } from '../db';
 import moment from 'moment-timezone';
 import { buildUserMethodReview, getUserMethodAnalysis, getUserPracticeJournal } from '../services/methodStats';
@@ -233,7 +233,7 @@ router.get('/history', async (req, res) => {
         const monthEnd = targetMonth.clone().endOf('month').format('YYYY-MM-DD');
 
         const logs = await db.query(
-            `SELECT cl.id, cl.checkin_date, cl.note, cl.reflection_note, cl.body_feeling_note, cl.source,
+            `SELECT cl.id, cl.checkin_date, cl.note, cl.practice_note, cl.source,
                     ARRAY_AGG(pm.name_zh ORDER BY pm.sort_order ASC) AS method_names
              FROM checkin_logs cl
              LEFT JOIN checkin_method_selections cms ON cms.checkin_log_id = cl.id
@@ -289,8 +289,9 @@ router.get('/history', async (req, res) => {
                 date: row.checkin_date,
                 methodNames: row.method_names.filter((n: string | null) => n !== null),
                 note: row.note,
-                reflectionNote: row.reflection_note,
-                bodyFeelingNote: row.body_feeling_note,
+                practiceNote: row.practice_note,
+                reflectionNote: row.practice_note,
+                bodyFeelingNote: '',
                 source: row.source
             })),
             stats: userStats.rows[0]
@@ -393,8 +394,12 @@ router.post('/checkin', async (req, res) => {
         await upsertLineUser(lineUserId, displayName || null);
 
         const methodIds = parseMethodIdsFromRequest(req);
-        const reflectionNote = typeof req.body?.reflectionNote === 'string' ? req.body.reflectionNote : '';
-        const bodyFeelingNote = typeof req.body?.bodyFeelingNote === 'string' ? req.body.bodyFeelingNote : '';
+        const practiceNote = typeof req.body?.practiceNote === 'string'
+            ? req.body.practiceNote
+            : mergeLegacyPracticeNotes(
+                typeof req.body?.reflectionNote === 'string' ? req.body.reflectionNote : '',
+                typeof req.body?.bodyFeelingNote === 'string' ? req.body.bodyFeelingNote : ''
+            );
 
         console.log('[liff-api] save checkin payload', {
             lineUserId,
@@ -404,14 +409,13 @@ router.post('/checkin', async (req, res) => {
             rawMethodIdsCsv: req.body?.methodIdsCsv,
             methodIds,
             methodCount: req.body?.methodCount,
-            reflectionLength: reflectionNote.length,
-            bodyFeelingLength: bodyFeelingNote.length
+            practiceNoteLength: practiceNote.length
         });
 
         const beforeBadges = await getUserBadgesSnapshot(lineUserId);
         const beforeBadgeKeys = new Set(beforeBadges.map((badge) => badge.key));
 
-        const saved = await saveTodayLineCheckin(lineUserId, methodIds, reflectionNote, bodyFeelingNote);
+        const saved = await saveTodayLineCheckin(lineUserId, methodIds, practiceNote);
         let unlockedBadges: Array<{ badgeId: string; earnedYear: number; name: string; emoji: string; description: string }> = [];
         if (!saved.alreadyCheckedIn) {
             await evaluateLineLiffBadges(lineUserId, saved.selectedMethods, saved.selectedMethodCodes || []);

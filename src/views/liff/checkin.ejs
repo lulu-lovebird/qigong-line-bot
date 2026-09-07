@@ -35,7 +35,7 @@
   <div class="container">
     <div class="card">
       <h1>今日打卡</h1>
-      <p class="muted">請勾選今天練習的功法，並可選填心得與身體感受。</p>
+      <p class="muted">請勾選今天練習的功法，並可選填練功心得與感受。</p>
       <div class="hint" id="todayStatus">正在載入今日打卡資料...</div>
     </div>
 
@@ -45,13 +45,8 @@
     </div>
 
     <div class="card">
-      <h2>練功心得（選填）</h2>
-      <textarea id="reflectionNote" placeholder="今天練功的心得..."></textarea>
-    </div>
-
-    <div class="card">
-      <h2>身體感受（選填）</h2>
-      <textarea id="bodyFeelingNote" placeholder="今天身體有什麼感受..."></textarea>
+      <h2>練功心得與身體感受（選填）</h2>
+      <textarea id="practiceNote" placeholder="記錄今天練功的心得、身體感受或其他體會..."></textarea>
     </div>
 
     <button type="button" id="submitButton">完成打卡</button>
@@ -61,13 +56,19 @@
   <script>
     const LIFF_ID = '<%= liffId %>';
     const methodsContainer = document.getElementById('methodsContainer');
-    const reflectionNote = document.getElementById('reflectionNote');
-    const bodyFeelingNote = document.getElementById('bodyFeelingNote');
+    const practiceNote = document.getElementById('practiceNote');
     const submitButton = document.getElementById('submitButton');
     const submitStatus = document.getElementById('submitStatus');
     const todayStatus = document.getElementById('todayStatus');
     let lineUserId = '';
     let displayName = '';
+
+    const mergeLegacyNotes = (reflection = '', bodyFeeling = '') => {
+      const reflectionText = reflection.trim();
+      const bodyFeelingText = bodyFeeling.trim();
+      if (reflectionText && bodyFeelingText) return `練功心得：${reflectionText}\n身體感受：${bodyFeelingText}`;
+      return reflectionText || bodyFeelingText;
+    };
     let practiceMethods = [];
     let selectedMethodIds = new Set();
     let expandedMethodIds = new Set();
@@ -308,8 +309,7 @@
         });
 
         renderMethods(methodsResp.methods, todayResp.selectedMethodIds);
-        reflectionNote.value = todayResp.reflectionNote || '';
-        bodyFeelingNote.value = todayResp.bodyFeelingNote || '';
+        practiceNote.value = todayResp.practiceNote || mergeLegacyNotes(todayResp.reflectionNote, todayResp.bodyFeelingNote);
 
         todayStatus.textContent = todayResp.alreadyCheckedIn
           ? '你今天已打卡，可修改今日內容後重新送出。'
@@ -346,8 +346,9 @@
             methodIdsCsv: methodIds.join(','),
             methodCount: selectedCount,
             displayName,
-            reflectionNote: reflectionNote.value,
-            bodyFeelingNote: bodyFeelingNote.value
+            practiceNote: practiceNote.value,
+            reflectionNote: practiceNote.value,
+            bodyFeelingNote: ''
           })
         });
         const streakText = result.stats ? `｜連續 ${result.stats.currentStreak} 天｜總計 ${result.stats.totalCheckins} 天` : '';

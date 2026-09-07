@@ -302,8 +302,7 @@ Second row:
 2. Bot replies with a LIFF link (`LINE_LIFF_CHECKIN_URL`).
 3. User opens the LIFF page and:
    - selects one or more practice methods
-   - optionally fills reflection note
-   - optionally fills body feeling note
+   - optionally fills one combined practice reflection and body-sensation note
 4. Submit saves today's check-in.
 5. If the user already checked in today, the LIFF page prefills today's content and allows overwrite update without increasing total days twice.
 
@@ -320,9 +319,12 @@ If you already use the hierarchical practice-method setup, also run the latest m
 ```bash
 docker exec -i qigong_db psql -U qigong_user -d qigong_bot < migrations/007_line_add_songjing_method.sql
 docker exec -i qigong_db psql -U qigong_user -d qigong_bot < migrations/010_line_backfill_2026_sanfu_badge.sql
+docker exec -i qigong_db psql -U qigong_user -d qigong_bot < migrations/011_line_unified_practice_note.sql
 ```
 
 Migration 010 idempotently awards the 2026 `夏練三伏` badge to users who checked in on all 40 days from July 15 through August 23. The service also reconciles the latest completed Sanfu period at startup and daily at 00:10 Asia/Taipei.
+
+Migration 011 must run before restarting the updated application. It adds the unified `practice_note` field, idempotently combines existing reflection and body-sensation notes, and keeps legacy writes synchronized during rollout without dropping the old columns.
 
 This migration adds:
 

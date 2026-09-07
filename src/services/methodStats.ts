@@ -52,6 +52,7 @@ export interface UserPracticeJournalEntry {
     date: string;
     recordedAt: string;
     methodNames: string[];
+    practiceNote: string;
     reflectionNote: string;
     bodyFeelingNote: string;
 }
@@ -256,18 +257,14 @@ export const getUserPracticeJournal = async (userId: string, limit = 12): Promis
         `SELECT c.id,
                 c.checkin_date,
                 COALESCE(c.updated_at, c.created_at) AS recorded_at,
-                c.reflection_note,
-                c.body_feeling_note,
+                c.practice_note,
                 ARRAY_AGG(pm.name_zh ORDER BY pm.sort_order ASC, pm.id ASC)
                     FILTER (WHERE pm.id IS NOT NULL) AS method_names
          FROM checkin_logs c
          LEFT JOIN checkin_method_selections s ON s.checkin_log_id = c.id
          LEFT JOIN practice_methods pm ON pm.id = s.practice_method_id
          WHERE c.line_user_id = $1
-           AND (
-               COALESCE(BTRIM(c.reflection_note), '') <> ''
-               OR COALESCE(BTRIM(c.body_feeling_note), '') <> ''
-           )
+           AND COALESCE(BTRIM(c.practice_note), '') <> ''
          GROUP BY c.id
          ORDER BY c.checkin_date DESC
          LIMIT $2`,
@@ -281,8 +278,9 @@ export const getUserPracticeJournal = async (userId: string, limit = 12): Promis
         methodNames: Array.isArray(row.method_names)
             ? row.method_names.filter((name: string | null) => typeof name === 'string')
             : [],
-        reflectionNote: row.reflection_note || '',
-        bodyFeelingNote: row.body_feeling_note || ''
+        practiceNote: row.practice_note || '',
+        reflectionNote: row.practice_note || '',
+        bodyFeelingNote: ''
     }));
 };
 
@@ -292,8 +290,7 @@ export const getAdminPracticeJournal = async (page = 1, limit = 20): Promise<Adm
     const countRes = await db.query(
         `SELECT COUNT(*) AS total
          FROM checkin_logs c
-         WHERE COALESCE(BTRIM(c.reflection_note), '') <> ''
-            OR COALESCE(BTRIM(c.body_feeling_note), '') <> ''`
+         WHERE COALESCE(BTRIM(c.practice_note), '') <> ''`
     );
     const total = parseInt(countRes.rows[0]?.total || '0', 10);
 
@@ -303,16 +300,14 @@ export const getAdminPracticeJournal = async (page = 1, limit = 20): Promise<Adm
                 u.display_name,
                 c.checkin_date,
                 COALESCE(c.updated_at, c.created_at) AS recorded_at,
-                c.reflection_note,
-                c.body_feeling_note,
+                c.practice_note,
                 ARRAY_AGG(pm.name_zh ORDER BY pm.sort_order ASC, pm.id ASC)
                     FILTER (WHERE pm.id IS NOT NULL) AS method_names
          FROM checkin_logs c
          JOIN users u ON u.line_user_id = c.line_user_id
          LEFT JOIN checkin_method_selections s ON s.checkin_log_id = c.id
          LEFT JOIN practice_methods pm ON pm.id = s.practice_method_id
-         WHERE COALESCE(BTRIM(c.reflection_note), '') <> ''
-            OR COALESCE(BTRIM(c.body_feeling_note), '') <> ''
+         WHERE COALESCE(BTRIM(c.practice_note), '') <> ''
          GROUP BY c.id, u.line_user_id, u.display_name
          ORDER BY COALESCE(c.updated_at, c.created_at) DESC
          LIMIT $1 OFFSET $2`,
@@ -333,8 +328,9 @@ export const getAdminPracticeJournal = async (page = 1, limit = 20): Promise<Adm
             methodNames: Array.isArray(row.method_names)
                 ? row.method_names.filter((name: string | null) => typeof name === 'string')
                 : [],
-            reflectionNote: row.reflection_note || '',
-            bodyFeelingNote: row.body_feeling_note || ''
+            practiceNote: row.practice_note || '',
+            reflectionNote: row.practice_note || '',
+            bodyFeelingNote: ''
         }))
     };
 };
