@@ -28,6 +28,8 @@ test('combines every legacy note shape without losing its meaning', () => {
     assert.equal(mergeLegacyPracticeNotes('呼吸穩定', ''), '呼吸穩定');
     assert.equal(mergeLegacyPracticeNotes('', '肩頸放鬆'), '肩頸放鬆');
     assert.equal(mergeLegacyPracticeNotes('  ', '\n'), '');
+    assert.equal(mergeLegacyPracticeNotes(null, null), '');
+    assert.equal(mergeLegacyPracticeNotes(null, '肩頸放鬆'), '肩頸放鬆');
 });
 
 test('ships one practice-note field and an idempotent legacy-data migration', () => {

@@ -187,9 +187,9 @@ export const getTodayLineCheckin = async (lineUserId: string): Promise<TodayLine
     };
 };
 
-export const mergeLegacyPracticeNotes = (reflectionNote = '', bodyFeelingNote = '') => {
-    const reflection = reflectionNote.trim();
-    const bodyFeeling = bodyFeelingNote.trim();
+export const mergeLegacyPracticeNotes = (reflectionNote: string | null = '', bodyFeelingNote: string | null = '') => {
+    const reflection = (reflectionNote || '').trim();
+    const bodyFeeling = (bodyFeelingNote || '').trim();
     if (reflection && bodyFeeling) return `練功心得：${reflection}\n身體感受：${bodyFeeling}`;
     return reflection || bodyFeeling;
 };
