@@ -43,5 +43,6 @@ export const zhTW = {
     badge_category_time_based: '時段挑戰',
     badge_category_seasonal: '節氣挑戰',
     badge_category_combo: '全套功法',
-    badge_category_method_days: '功法里程碑'
+    badge_category_method_days: '功法里程碑',
+    practice_feeling_tags: '快速感受標籤'
 };

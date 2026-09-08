@@ -114,4 +114,14 @@ router.get('/achievements', async (req, res) => {
     }
 });
 
+router.get('/practice-feeling-tags', (_req, res) => {
+    res.render('admin/practice-feeling-tags', {
+        i18n: _req.i18n,
+        lang: _req.langCode,
+        currentPeriod: 'week',
+        dateRange: '',
+        path: '/line/admin-dashboard/practice-feeling-tags'
+    });
+});
+
 export default router;

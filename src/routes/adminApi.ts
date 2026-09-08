@@ -2,6 +2,7 @@ import { Request, Router } from 'express';
 import { getOverviewStats, getLeaderboardStats, AdminPeriod, getAdminPeriodRange, getCheckedInUsersByDate, getPendingUsersByDate, LeaderboardLimit } from '../services/adminStats';
 import { getAdminPracticeJournal } from '../services/methodStats';
 import moment from 'moment-timezone';
+import { getPracticeFeelingTags, savePracticeFeelingTags } from '../services/practiceFeelingTags';
 
 const router = Router();
 
@@ -117,6 +118,24 @@ router.get('/journal', async (req, res) => {
     } catch (e) {
         console.error('Error fetching admin journal API:', e);
         res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+router.get('/practice-feeling-tags', async (_req, res) => {
+    try {
+        res.json({ tags: await getPracticeFeelingTags(true) });
+    } catch (error) {
+        console.error('Error fetching practice feeling tags:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+router.put('/practice-feeling-tags', async (req, res) => {
+    try {
+        res.json({ tags: await savePracticeFeelingTags(req.body?.tags) });
+    } catch (error) {
+        console.error('Error saving practice feeling tags:', error);
+        res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid tag data' });
     }
 });
 

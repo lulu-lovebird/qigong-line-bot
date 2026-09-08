@@ -22,6 +22,10 @@
     .child-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
     .child-label { display: flex; align-items: center; gap: 10px; flex: 1; color: #4b5563; }
     .method-hint { color: #9ca3af; font-size: 12px; }
+    .feeling-hint { margin: 10px 0 8px; }
+    .feeling-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+    .feeling-tag { width: auto; padding: 8px 12px; border: 1px solid #86efac; border-radius: 999px; background: #f0fdf4; color: #166534; font-size: 14px; font-weight: 500; }
+    .feeling-tag.selected { background: #06c755; border-color: #06c755; color: #fff; }
     textarea { width: 100%; min-height: 96px; border: 1px solid #d1d5db; border-radius: 10px; padding: 12px; font-size: 14px; box-sizing: border-box; }
     button { width: 100%; background: #06c755; color: #fff; border: 0; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 600; cursor: pointer; }
     button:disabled { background: #9ca3af; }
@@ -46,7 +50,9 @@
 
     <div class="card">
       <h2>練功心得與身體感受（選填）</h2>
-      <textarea id="practiceNote" placeholder="記錄今天練功的心得、身體感受或其他體會..."></textarea>
+      <textarea id="practiceNote" maxlength="1000" placeholder="記錄今天練功的心得、身體感受或其他體會..."></textarea>
+      <p id="feelingTagsHint" class="muted feeling-hint" hidden>快速選擇感受（可複選）</p>
+      <div id="feelingTags" class="feeling-tags"></div>
     </div>
 
     <button type="button" id="submitButton">完成打卡</button>
@@ -57,6 +63,8 @@
     const LIFF_ID = '<%= liffId %>';
     const methodsContainer = document.getElementById('methodsContainer');
     const practiceNote = document.getElementById('practiceNote');
+    const feelingTags = document.getElementById('feelingTags');
+    const feelingTagsHint = document.getElementById('feelingTagsHint');
     const submitButton = document.getElementById('submitButton');
     const submitStatus = document.getElementById('submitStatus');
     const todayStatus = document.getElementById('todayStatus');
@@ -72,6 +80,43 @@
     let practiceMethods = [];
     let selectedMethodIds = new Set();
     let expandedMethodIds = new Set();
+    let practiceFeelingTags = [];
+
+    const noteLines = () => practiceNote.value.split('\n').map((line) => line.trim()).filter(Boolean);
+    const renderFeelingTags = () => {
+      feelingTags.replaceChildren();
+      feelingTagsHint.hidden = practiceFeelingTags.length === 0;
+      const lines = new Set(noteLines());
+      practiceFeelingTags.forEach((tag) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `feeling-tag${lines.has(tag.nameZh) ? ' selected' : ''}`;
+        button.textContent = tag.nameZh;
+        button.setAttribute('aria-pressed', String(lines.has(tag.nameZh)));
+        button.addEventListener('click', () => toggleFeelingTag(tag.nameZh));
+        feelingTags.append(button);
+      });
+    };
+
+    const toggleFeelingTag = (label) => {
+      const lines = practiceNote.value.split('\n');
+      const existingIndex = lines.findIndex((line) => line.trim() === label);
+      if (existingIndex >= 0) {
+        lines.splice(existingIndex, 1);
+        practiceNote.value = lines.join('\n').replace(/^\n+|\n+$/g, '');
+      } else {
+        const next = practiceNote.value.trim() ? `${practiceNote.value.replace(/\s+$/, '')}\n${label}` : label;
+        if (next.length > practiceNote.maxLength) {
+          setStatus(submitStatus, '心得與感受最多 1000 字，無法加入此標籤。', 'error');
+          return;
+        }
+        practiceNote.value = next;
+      }
+      renderFeelingTags();
+      practiceNote.focus();
+    };
+
+    practiceNote.addEventListener('input', renderFeelingTags);
 
     const setStatus = (el, message, className = '') => {
       el.textContent = message;
@@ -300,16 +345,19 @@
         lineUserId = profile.userId;
         displayName = profile.displayName || '';
 
-        const methodsResp = await apiFetch('/line/api/liff/practice-methods').catch((error) => {
-          throw new Error(`功法列表載入失敗：${error.message}`);
-        });
-
-        const todayResp = await apiFetch('/line/api/liff/checkin/today').catch((error) => {
-          throw new Error(`今日打卡資料載入失敗：${error.message}`);
-        });
+        const [methodsResp, todayResp, feelingTagsResp] = await Promise.all([
+          apiFetch('/line/api/liff/practice-methods').catch((error) => { throw new Error(`功法列表載入失敗：${error.message}`); }),
+          apiFetch('/line/api/liff/checkin/today').catch((error) => { throw new Error(`今日打卡資料載入失敗：${error.message}`); }),
+          apiFetch('/line/api/liff/practice-feeling-tags').catch((error) => {
+            console.error('快速感受標籤載入失敗：', error);
+            return { tags: [] };
+          })
+        ]);
 
         renderMethods(methodsResp.methods, todayResp.selectedMethodIds);
         practiceNote.value = todayResp.practiceNote || mergeLegacyNotes(todayResp.reflectionNote, todayResp.bodyFeelingNote);
+        practiceFeelingTags = feelingTagsResp.tags;
+        renderFeelingTags();
 
         todayStatus.textContent = todayResp.alreadyCheckedIn
           ? '你今天已打卡，可修改今日內容後重新送出。'

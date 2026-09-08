@@ -4,6 +4,7 @@ import { db } from '../db';
 import moment from 'moment-timezone';
 import { buildUserMethodReview, getUserMethodAnalysis, getUserPracticeJournal } from '../services/methodStats';
 import { generateMethodReviewWithLlm } from '../services/methodReviewLlm';
+import { getPracticeFeelingTags } from '../services/practiceFeelingTags';
 
 const router = Router();
 
@@ -82,6 +83,15 @@ router.get('/practice-methods', async (req, res) => {
     } catch (error) {
         console.error(`[liff-api] failed to load practice methods after ${Date.now() - startedAt}ms`, error);
         res.status(500).json({ error: 'Failed to load practice methods' });
+    }
+});
+
+router.get('/practice-feeling-tags', async (_req, res) => {
+    try {
+        res.json({ tags: await getPracticeFeelingTags() });
+    } catch (error) {
+        console.error('[liff-api] failed to load practice feeling tags', error);
+        res.status(500).json({ error: 'Failed to load practice feeling tags' });
     }
 });
 

@@ -1,0 +1,95 @@
+<%- include('../partials/header') %>
+
+<p class="text-muted">調整打卡頁顯示的快速感受標籤。拖曳不易於手機操作，因此請使用上下按鈕調整順序；停用後不會影響既有心得。</p>
+<div id="tagList" class="d-grid gap-3"></div>
+<div class="d-flex gap-2 mt-4">
+    <button id="addTag" type="button" class="btn btn-outline-primary">新增標籤</button>
+    <button id="saveTags" type="button" class="btn btn-primary">儲存全部變更</button>
+</div>
+<div id="status" class="mt-3" role="status"></div>
+
+<template id="tagTemplate">
+    <div class="card tag-row" data-id="">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-3"><label class="form-label">繁體中文</label><input class="form-control name-zh" maxlength="40" required></div>
+                <div class="col-lg-3"><label class="form-label">簡體中文</label><input class="form-control name-zh-cn" maxlength="40"></div>
+                <div class="col-lg-3"><label class="form-label">English</label><input class="form-control name-en" maxlength="80"></div>
+                <div class="col-lg-3 d-flex align-items-center gap-2">
+                    <div class="form-check me-auto"><input class="form-check-input is-active" type="checkbox" checked><label class="form-check-label">啟用</label></div>
+                    <button type="button" class="btn btn-outline-secondary move-up" aria-label="上移">↑</button>
+                    <button type="button" class="btn btn-outline-secondary move-down" aria-label="下移">↓</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+
+<script>
+    const list = document.getElementById('tagList');
+    const status = document.getElementById('status');
+    const template = document.getElementById('tagTemplate');
+
+    const addRow = (tag = {}) => {
+        const row = template.content.firstElementChild.cloneNode(true);
+        row.dataset.id = tag.id || '';
+        row.querySelector('.name-zh').value = tag.nameZh || '';
+        row.querySelector('.name-zh-cn').value = tag.nameZhCn || '';
+        row.querySelector('.name-en').value = tag.nameEn || '';
+        row.querySelector('.is-active').checked = tag.isActive !== false;
+        list.append(row);
+    };
+
+    list.addEventListener('click', (event) => {
+        const row = event.target.closest('.tag-row');
+        if (!row) return;
+        if (event.target.closest('.move-up') && row.previousElementSibling) list.insertBefore(row, row.previousElementSibling);
+        if (event.target.closest('.move-down') && row.nextElementSibling) list.insertBefore(row.nextElementSibling, row);
+    });
+
+    document.getElementById('addTag').addEventListener('click', () => addRow());
+    document.getElementById('saveTags').addEventListener('click', async () => {
+        const button = document.getElementById('saveTags');
+        const tags = [...list.querySelectorAll('.tag-row')].map((row) => ({
+            id: row.dataset.id || undefined,
+            nameZh: row.querySelector('.name-zh').value,
+            nameZhCn: row.querySelector('.name-zh-cn').value,
+            nameEn: row.querySelector('.name-en').value,
+            isActive: row.querySelector('.is-active').checked
+        }));
+        button.disabled = true;
+        status.className = 'mt-3 text-muted';
+        status.textContent = '儲存中...';
+        try {
+            const response = await fetch('/line/api/admin/practice-feeling-tags', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tags })
+            });
+            const body = await response.json();
+            if (!response.ok) throw new Error(body.error || '儲存失敗');
+            list.replaceChildren();
+            body.tags.forEach(addRow);
+            status.className = 'mt-3 text-success';
+            status.textContent = '快速感受標籤已儲存。';
+        } catch (error) {
+            status.className = 'mt-3 text-danger';
+            status.textContent = error.message;
+        } finally {
+            button.disabled = false;
+        }
+    });
+
+    fetch('/line/api/admin/practice-feeling-tags')
+        .then(async (response) => {
+            const body = await response.json();
+            if (!response.ok) throw new Error(body.error || '載入失敗');
+            body.tags.forEach(addRow);
+        })
+        .catch((error) => {
+            status.className = 'mt-3 text-danger';
+            status.textContent = error.message;
+        });
+</script>
+
+<%- include('../partials/footer') %>

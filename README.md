@@ -320,11 +320,14 @@ If you already use the hierarchical practice-method setup, also run the latest m
 docker exec -i qigong_db psql -U qigong_user -d qigong_bot < migrations/007_line_add_songjing_method.sql
 docker exec -i qigong_db psql -U qigong_user -d qigong_bot < migrations/010_line_backfill_2026_sanfu_badge.sql
 docker exec -i qigong_db psql -U qigong_user -d qigong_bot < migrations/011_line_unified_practice_note.sql
+docker exec -i qigong_db psql -U qigong_user -d qigong_bot < migrations/012_line_practice_feeling_tags.sql
 ```
 
 Migration 010 idempotently awards the 2026 `夏練三伏` badge to users who checked in on all 40 days from July 15 through August 23. The service also reconciles the latest completed Sanfu period at startup and daily at 00:10 Asia/Taipei.
 
 Migration 011 must run before restarting the updated application. It adds the unified `practice_note` field, idempotently combines existing reflection and body-sensation notes, and keeps legacy writes synchronized during rollout without dropping the old columns.
+
+Migration 012 adds the admin-configurable quick feeling tags shown on the LIFF check-in page.
 
 This migration adds:
 

@@ -43,5 +43,6 @@ export const en = {
     badge_category_time_based: 'Time Challenges',
     badge_category_seasonal: 'Seasonal Challenges',
     badge_category_combo: 'Method Sets',
-    badge_category_method_days: 'Method Milestones'
+    badge_category_method_days: 'Method Milestones',
+    practice_feeling_tags: 'Quick Feeling Tags'
 };

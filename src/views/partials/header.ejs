@@ -29,6 +29,7 @@
                 <a href="/line/admin-dashboard/method-analysis?period=30d&lang=<%= lang %>" class="<%= path === '/line/admin-dashboard/method-analysis' ? 'active' : '' %>"><%= i18n.method_analysis %></a>
                 <a href="/line/admin-dashboard/journal?lang=<%= lang %>" class="<%= path === '/line/admin-dashboard/journal' ? 'active' : '' %>"><%= i18n.journal_feed %></a>
                 <a href="/line/admin-dashboard/achievements?lang=<%= lang %>" class="<%= path === '/line/admin-dashboard/achievements' ? 'active' : '' %>"><%= i18n.achievements_leaderboard %></a>
+                <a href="/line/admin-dashboard/practice-feeling-tags?lang=<%= lang %>" class="<%= path === '/line/admin-dashboard/practice-feeling-tags' ? 'active' : '' %>"><%= i18n.practice_feeling_tags %></a>
                 
                 <hr class="border-secondary mx-3">
                 <div class="px-3">
@@ -48,6 +49,7 @@
                         <% if (path === '/line/admin-dashboard/method-analysis') { %><%= i18n.method_analysis %><% } %>
                         <% if (path === '/line/admin-dashboard/journal') { %><%= i18n.journal_feed %><% } %>
                         <% if (path === '/line/admin-dashboard/achievements') { %><%= i18n.achievements_leaderboard %><% } %>
+                        <% if (path === '/line/admin-dashboard/practice-feeling-tags') { %><%= i18n.practice_feeling_tags %><% } %>
                         <% if (dateRange) { %><small class="text-muted fs-5">(<%= dateRange %>)</small><% } %>
                     </h2>
                     <% if (path === '/line/admin-dashboard' || path === '/line/admin-dashboard/leaderboard') { %>
