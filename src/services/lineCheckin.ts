@@ -1,8 +1,10 @@
 import moment from 'moment-timezone';
 import { db } from '../db';
 import { evaluateBadges } from '../badges';
+import { createAsyncTtlCache } from '../utils/asyncTtlCache';
 
 const TIMEZONE = 'Asia/Taipei';
+const PRACTICE_METHOD_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export interface LinePracticeMethod {
     id: number;
@@ -43,15 +45,22 @@ export const upsertLineUser = async (lineUserId: string, displayName?: string | 
     );
 };
 
-const getPracticeMethodRows = async (): Promise<PracticeMethodRow[]> => {
-    const { rows } = await db.queryWithRetry(
-        `SELECT id, code, name_zh, name_en, estimated_minutes, parent_id, method_type
-         FROM practice_methods
-         WHERE is_active = TRUE
-         ORDER BY sort_order ASC, id ASC`
-    );
+const practiceMethodRowsCache = createAsyncTtlCache<PracticeMethodRow[]>(PRACTICE_METHOD_CACHE_TTL_MS);
 
-    return rows;
+export const invalidatePracticeMethodCache = () => practiceMethodRowsCache.invalidate();
+
+export const getPracticeMethodRows = async (): Promise<PracticeMethodRow[]> => {
+    const rows = await practiceMethodRowsCache.get(async () => {
+        const result = await db.queryWithRetry(
+            `SELECT id, code, name_zh, name_en, estimated_minutes, parent_id, method_type
+             FROM practice_methods
+             WHERE is_active = TRUE
+             ORDER BY sort_order ASC, id ASC`
+        );
+        return result.rows;
+    });
+
+    return rows.map((row) => ({ ...row }));
 };
 
 const buildPracticeMethodTree = (rows: PracticeMethodRow[]): LinePracticeMethod[] => {
