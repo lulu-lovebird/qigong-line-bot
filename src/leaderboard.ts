@@ -43,30 +43,36 @@ const getPeriodRange = (period: Period): PeriodRange => {
 };
 
 const getTopTotals = async (start: Date, end: Date) => {
+    const startDate = moment(start).tz(TIMEZONE).format('YYYY-MM-DD');
+    const endDate = moment(end).tz(TIMEZONE).format('YYYY-MM-DD');
     const query = `
-        SELECT u.display_name, COUNT(DISTINCT DATE(c.created_at AT TIME ZONE $1)) AS total_days
+        SELECT u.display_name, COUNT(DISTINCT COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1))) AS total_days
         FROM checkin_logs c
         JOIN users u ON u.line_user_id = c.line_user_id
-        WHERE c.created_at >= $2 AND c.created_at < $3
+        WHERE COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1)) >= $2::date
+          AND COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1)) < $3::date
         GROUP BY u.display_name
         ORDER BY total_days DESC, u.display_name ASC
         LIMIT 10;
     `;
-    const { rows } = await db.query(query, [TIMEZONE, start, end]);
+    const { rows } = await db.query(query, [TIMEZONE, startDate, endDate]);
     return rows;
 };
 
 const getTopStreaks = async (start: Date, end: Date) => {
+    const startDate = moment(start).tz(TIMEZONE).format('YYYY-MM-DD');
+    const endDate = moment(end).tz(TIMEZONE).format('YYYY-MM-DD');
     // 1. Fetch all distinct check-in dates for all users in period
     const query = `
-        SELECT c.line_user_id, u.display_name, DATE(c.created_at AT TIME ZONE $1) AS d
+        SELECT c.line_user_id, u.display_name, COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1)) AS d
         FROM checkin_logs c
         JOIN users u ON u.line_user_id = c.line_user_id
-        WHERE c.created_at >= $2 AND c.created_at < $3
+        WHERE COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1)) >= $2::date
+          AND COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1)) < $3::date
         GROUP BY c.line_user_id, u.display_name, d
         ORDER BY c.line_user_id, d ASC;
     `;
-    const { rows } = await db.query(query, [TIMEZONE, start, end]);
+    const { rows } = await db.query(query, [TIMEZONE, startDate, endDate]);
     
     if (rows.length === 0) return [];
 

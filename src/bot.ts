@@ -2,6 +2,7 @@ import { messagingApi, webhook } from '@line/bot-sdk';
 import { db } from './db';
 import moment from 'moment-timezone';
 import { evaluateBadges } from './badges';
+import { saveLegacyTextCheckin } from './services/lineCheckin';
 import { createReminderText, sendDailyReminder, sendAdHocBroadcast, sendManualResendReminder } from './cron';
 import { buildPeriodLeaderboardText } from './leaderboard';
 
@@ -209,7 +210,7 @@ export const handleEvent = async (event: webhook.Event): Promise<any> => {
 
     // LIFF sends the success summary as a user message back into the chat.
     // Ignore it so the bot does not respond with the fallback unknown-command message.
-    if (text.startsWith('✅ 打卡成功')) {
+    if (text.startsWith('✅ 打卡成功') || text.startsWith('✅ 補登成功')) {
         return null;
     }
 
@@ -409,46 +410,24 @@ export const handleEvent = async (event: webhook.Event): Promise<any> => {
     if (currentState === 'WAITING_FOR_NOTE') {
         userStates.delete(userId); // clear state
 
-        const now = moment().tz(TIMEZONE);
-        const todayStr = now.format('YYYY-MM-DD');
-        const yesterdayStr = now.clone().subtract(1, 'days').format('YYYY-MM-DD');
-
-        // Get user current stats
-        const userRes = await db.query('SELECT current_streak, longest_streak, last_checkin_date FROM users WHERE line_user_id = $1', [userId]);
-        const user = userRes.rows[0];
-        
-        const lastCheckinDate = user.last_checkin_date ? moment(user.last_checkin_date).tz(TIMEZONE).format('YYYY-MM-DD') : null;
-
-        let newStreak = user.current_streak;
-        if (lastCheckinDate === todayStr) {
+        const saved = await saveLegacyTextCheckin(userId, text);
+        if (saved.alreadyCheckedIn) {
             return client.replyMessage({
                 replyToken,
                 messages: [{ type: 'text', text: '你今天已經打過卡囉！我們明天見！(如果有新心得也可以繼續分享)' }]
             });
-        } else if (lastCheckinDate === yesterdayStr) {
-            newStreak += 1;
-        } else {
-            newStreak = 1;
         }
 
-        const newLongestStreak = Math.max(newStreak, user.longest_streak);
-
-        // Update DB
-        await db.query(
-            'UPDATE users SET current_streak = $1, longest_streak = $2, total_checkins = total_checkins + 1, last_checkin_date = $3 WHERE line_user_id = $4',
-            [newStreak, newLongestStreak, todayStr, userId]
-        );
-        await db.query(
-            'INSERT INTO checkin_logs (line_user_id, note) VALUES ($1, $2)',
-            [userId, text]
-        );
-
         // Background evaluation of badges (don't await so it doesn't block reply)
-        evaluateBadges(userId, text).catch(e => console.error("Badge evaluation error:", e));
+        evaluateBadges(userId, text, [], {
+            checkinDate: saved.date,
+            entryKind: saved.entryKind,
+            practiceTimezone: saved.practiceTimezone
+        }).catch(e => console.error("Badge evaluation error:", e));
 
         return client.replyMessage({
             replyToken,
-            messages: [{ type: 'text', text: `紀錄成功！你已連續打卡 ${newStreak} 天！🔥\n\n今日練習：${text}` }]
+            messages: [{ type: 'text', text: `紀錄成功！你已連續打卡 ${saved.stats.currentStreak} 天！🔥\n\n今日練習：${text}` }]
         });
     }
 

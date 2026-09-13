@@ -59,6 +59,7 @@ DATABASE_URL=postgres://qigong_user:qigong_password@localhost:5432/qigong_bot
 ADMIN_USER_ID=your_line_user_id
 LINE_BOT_SHORTCUT_URL=https://line.me/R/oaMessage/%40your_oa_id/?%E2%9C%85%20Check-In
 LIFF_ID=your_liff_id
+LINE_LOGIN_CHANNEL_ID=your_line_login_channel_id
 LINE_LIFF_CHECKIN_URL=https://liff.line.me/your_liff_id
 LINE_REMINDER_ENABLED=false
 LIFF_ID_CHECKIN=your_checkin_liff_id
@@ -321,6 +322,7 @@ docker exec -i qigong_db psql -U qigong_user -d qigong_bot < migrations/007_line
 docker exec -i qigong_db psql -U qigong_user -d qigong_bot < migrations/010_line_backfill_2026_sanfu_badge.sql
 docker exec -i qigong_db psql -U qigong_user -d qigong_bot < migrations/011_line_unified_practice_note.sql
 docker exec -i qigong_db psql -U qigong_user -d qigong_bot < migrations/012_line_practice_feeling_tags.sql
+docker exec -i qigong_db psql -U qigong_user -d qigong_bot < migrations/013_line_makeup_checkins.sql
 ```
 
 Migration 010 idempotently awards the 2026 `夏練三伏` badge to users who checked in on all 40 days from July 15 through August 23. The service also reconciles the latest completed Sanfu period at startup and daily at 00:10 Asia/Taipei.
@@ -328,6 +330,8 @@ Migration 010 idempotently awards the 2026 `夏練三伏` badge to users who che
 Migration 011 must run before restarting the updated application. It adds the unified `practice_note` field, idempotently combines existing reflection and body-sensation notes, and keeps legacy writes synchronized during rollout without dropping the old columns.
 
 Migration 012 adds the admin-configurable quick feeling tags shown on the LIFF check-in page.
+
+Migration 013 adds personal practice time zones and yesterday make-ups before 12:00 local time.
 
 This migration adds:
 

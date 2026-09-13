@@ -77,16 +77,19 @@ export const getAdminPeriodRange = (period: AdminPeriod): PeriodRange => {
 
 export const getOverviewStats = async (period: AdminPeriod) => {
     const { start, end } = getAdminPeriodRange(period);
+    const startDate = moment(start).tz(TIMEZONE).format('YYYY-MM-DD');
+    const endDate = moment(end).tz(TIMEZONE).format('YYYY-MM-DD');
 
     // 1. Get KPI numbers
     const kpiQuery = `
         SELECT 
             COUNT(DISTINCT line_user_id) AS active_users,
-            COUNT(DISTINCT line_user_id || DATE(created_at AT TIME ZONE $1)) AS total_checkins
+            COUNT(DISTINCT line_user_id || COALESCE(checkin_date, DATE(created_at AT TIME ZONE $1))) AS total_checkins
         FROM checkin_logs
-        WHERE created_at >= $2 AND created_at < $3
+        WHERE COALESCE(checkin_date, DATE(created_at AT TIME ZONE $1)) >= $2::date
+          AND COALESCE(checkin_date, DATE(created_at AT TIME ZONE $1)) < $3::date
     `;
-    const kpiRes = await db.query(kpiQuery, [TIMEZONE, start, end]);
+    const kpiRes = await db.query(kpiQuery, [TIMEZONE, startDate, endDate]);
     
     const activeUsers = parseInt(kpiRes.rows[0]?.active_users || '0');
     const totalCheckins = parseInt(kpiRes.rows[0]?.total_checkins || '0');
@@ -97,14 +100,15 @@ export const getOverviewStats = async (period: AdminPeriod) => {
     // 2. Get daily trend for chart
     const trendQuery = `
         SELECT 
-            DATE(created_at AT TIME ZONE $1) AS date_val,
+            COALESCE(checkin_date, DATE(created_at AT TIME ZONE $1)) AS date_val,
             COUNT(DISTINCT line_user_id) AS daily_count
         FROM checkin_logs
-        WHERE created_at >= $2 AND created_at < $3
+        WHERE COALESCE(checkin_date, DATE(created_at AT TIME ZONE $1)) >= $2::date
+          AND COALESCE(checkin_date, DATE(created_at AT TIME ZONE $1)) < $3::date
         GROUP BY date_val
         ORDER BY date_val ASC
     `;
-    const trendRes = await db.query(trendQuery, [TIMEZONE, start, end]);
+    const trendRes = await db.query(trendQuery, [TIMEZONE, startDate, endDate]);
 
     // Fill missing dates
     const trendData: { date: string, count: number }[] = [];
@@ -232,28 +236,32 @@ export const getPendingUsersByDate = async (dateStr: string, page = 1, limit = 2
 
 export const getLeaderboardStats = async (period: AdminPeriod, limit: LeaderboardLimit = 10) => {
     const { start, end } = getAdminPeriodRange(period);
+    const startDate = moment(start).tz(TIMEZONE).format('YYYY-MM-DD');
+    const endDate = moment(end).tz(TIMEZONE).format('YYYY-MM-DD');
 
     // Reuse the exact queries from the public leaderboard but optimized for admin
     const totalsQuery = `
-        SELECT u.line_user_id, u.display_name, COUNT(DISTINCT DATE(c.created_at AT TIME ZONE $1)) AS total_days
+        SELECT u.line_user_id, u.display_name, COUNT(DISTINCT COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1))) AS total_days
         FROM checkin_logs c
         JOIN users u ON u.line_user_id = c.line_user_id
-        WHERE c.created_at >= $2 AND c.created_at < $3
+        WHERE COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1)) >= $2::date
+          AND COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1)) < $3::date
         GROUP BY u.line_user_id, u.display_name
         ORDER BY total_days DESC, u.display_name ASC
         LIMIT $4;
     `;
-    const totalsRes = await db.query(totalsQuery, [TIMEZONE, start, end, limit]);
+    const totalsRes = await db.query(totalsQuery, [TIMEZONE, startDate, endDate, limit]);
 
     const streaksQuery = `
-        SELECT c.line_user_id, u.display_name, DATE(c.created_at AT TIME ZONE $1) AS d
+        SELECT c.line_user_id, u.display_name, COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1)) AS d
         FROM checkin_logs c
         JOIN users u ON u.line_user_id = c.line_user_id
-        WHERE c.created_at >= $2 AND c.created_at < $3
+        WHERE COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1)) >= $2::date
+          AND COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1)) < $3::date
         GROUP BY c.line_user_id, u.display_name, d
         ORDER BY c.line_user_id, d ASC;
     `;
-    const streaksRes = await db.query(streaksQuery, [TIMEZONE, start, end]);
+    const streaksRes = await db.query(streaksQuery, [TIMEZONE, startDate, endDate]);
     
     // Compute max streaks using same logic
     let streaksData: any[] = [];

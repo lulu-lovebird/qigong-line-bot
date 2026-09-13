@@ -57,7 +57,7 @@
     const apiFetch = async (url) => {
       const separator = url.includes('?') ? '&' : '?';
       const finalUrl = `${url}${separator}displayName=${encodeURIComponent(displayName)}`;
-      const res = await fetch(finalUrl, { headers: { 'x-line-user-id': lineUserId } });
+      const res = await fetch(finalUrl, { headers: { 'x-line-user-id': lineUserId, 'x-line-access-token': liff.getAccessToken() || '' } });
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: 'Request failed' }));
         throw new Error(body.error || 'Request failed');

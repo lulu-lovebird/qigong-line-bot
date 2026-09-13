@@ -6,7 +6,10 @@ CREATE TABLE IF NOT EXISTS users (
     total_checkins INTEGER DEFAULT 0,
     current_streak INTEGER DEFAULT 0,
     longest_streak INTEGER DEFAULT 0,
-    last_checkin_date DATE
+    last_checkin_date DATE,
+    practice_timezone TEXT NOT NULL DEFAULT 'Asia/Taipei',
+    practice_timezone_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+    practice_timezone_updated_at TIMESTAMP WITH TIME ZONE
 );
 
 CREATE TABLE IF NOT EXISTS checkin_logs (
@@ -19,7 +22,9 @@ CREATE TABLE IF NOT EXISTS checkin_logs (
     body_feeling_note TEXT,
     practice_note TEXT,
     source VARCHAR(32) DEFAULT 'text',
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    entry_kind VARCHAR(16) NOT NULL DEFAULT 'regular' CHECK (entry_kind IN ('regular', 'makeup')),
+    practice_timezone TEXT NOT NULL DEFAULT 'Asia/Taipei'
 );
 
 DO $$

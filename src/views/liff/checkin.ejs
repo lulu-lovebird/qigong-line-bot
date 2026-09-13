@@ -33,29 +33,57 @@
     .status { margin-top: 12px; font-size: 14px; }
     .error { color: #b91c1c; }
     .success { color: #166534; }
+    .settings-row { display:flex; justify-content:flex-end; margin-bottom:12px; }
+    .timezone-setting { display:inline-flex; align-items:center; gap:5px; width:auto; max-width:100%; border:1px solid #d1d5db; border-radius:10px; background:#fff; color:#1f2937; padding:8px 10px; font-size:14px; font-weight:500; }
+    .timezone-setting-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .timezone-setting-action { color:#06a844; font-weight:700; }
+    .timezone-card { border:1px solid #86efac; }
+    .timezone-row { display:flex; gap:8px; align-items:center; }
+    .timezone-input { flex:1; min-width:0; border:1px solid #d1d5db; border-radius:10px; background:#fff; padding:11px; font-size:14px; }
+    .timezone-button { width:auto; padding:11px 14px; }
+    .date-tabs { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:6px; margin-top:10px; padding:4px; border-radius:12px; background:#f3f4f6; }
+    .date-tab { min-width:0; padding:9px 7px; border-radius:9px; background:transparent; color:#374151; font-size:13px; line-height:1.2; }
+    .date-tab-main { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .date-tab-sub { display:block; margin-top:3px; color:#6b7280; font-size:11px; font-weight:500; white-space:nowrap; }
+    .date-tab.active { background:#06c755; color:#fff; }
+    .date-tab.active .date-tab-sub { color:#dcfce7; }
+    .date-tab.makeup.active { background:#b45309; }
+    .date-tab.makeup.active .date-tab-sub { color:#fef3c7; }
+    .makeup-hint { margin:8px 0 0; color:#92400e; font-size:12px; }
+    .makeup-mode { border:2px solid #f59e0b; }
+    @media (max-width:480px) { .container{padding:14px}.card{padding:16px;margin-bottom:12px}.timezone-row{align-items:stretch;flex-direction:column}.timezone-button{width:100%} }
   </style>
 </head>
 <body>
   <div class="container">
+    <div class="settings-row"><button id="changeTimezone" class="timezone-setting" type="button" hidden><span aria-hidden="true">🌐</span><span id="timezoneLabel" class="timezone-setting-label"></span><span class="timezone-setting-action">變更</span></button></div>
+    <div id="timezoneCard" class="card timezone-card" hidden>
+      <h2>設定練功時區</h2>
+      <p class="muted">練功日期與補登期限會依此時區計算，請確認後再打卡。</p>
+      <div class="timezone-row"><select id="timezoneInput" class="timezone-input"></select><button id="saveTimezone" class="timezone-button" type="button">確認時區</button></div>
+      <div id="timezoneStatus" class="status"></div>
+    </div>
     <div class="card">
-      <h1>今日打卡</h1>
-      <p class="muted">請勾選今天練習的功法，並可選填練功心得與感受。</p>
+      <h1>練功打卡</h1>
+      <p class="muted">請選擇練功日期與功法，並可選填心得與感受。</p>
+      <div id="dateTabs" class="date-tabs" hidden><button id="todayTab" class="date-tab active" type="button"></button><button id="makeupTab" class="date-tab makeup" type="button"></button></div>
+      <p id="makeupHint" class="muted makeup-hint"></p>
       <div class="hint" id="todayStatus">正在載入今日打卡資料...</div>
     </div>
 
-    <div class="card">
-      <h2>今日功法（可複選）</h2>
+    <div id="methodsCard" class="card" hidden>
+      <h2>練習功法（可複選）</h2>
       <div id="methodsContainer"></div>
     </div>
 
-    <div class="card">
+    <div id="noteCard" class="card" hidden>
       <h2>練功心得與身體感受（選填）</h2>
       <textarea id="practiceNote" maxlength="1000" placeholder="記錄今天練功的心得、身體感受或其他體會..."></textarea>
       <p id="feelingTagsHint" class="muted feeling-hint" hidden>快速選擇感受（可複選）</p>
       <div id="feelingTags" class="feeling-tags"></div>
     </div>
 
-    <button type="button" id="submitButton">完成打卡</button>
+    <button type="button" id="submitButton" hidden>完成打卡</button>
     <div id="submitStatus" class="status"></div>
   </div>
 
@@ -68,6 +96,18 @@
     const submitButton = document.getElementById('submitButton');
     const submitStatus = document.getElementById('submitStatus');
     const todayStatus = document.getElementById('todayStatus');
+    const timezoneCard = document.getElementById('timezoneCard');
+    const timezoneInput = document.getElementById('timezoneInput');
+    const timezoneStatus = document.getElementById('timezoneStatus');
+    const saveTimezone = document.getElementById('saveTimezone');
+    const changeTimezone = document.getElementById('changeTimezone');
+    const timezoneLabel = document.getElementById('timezoneLabel');
+    const dateTabs = document.getElementById('dateTabs');
+    const todayTab = document.getElementById('todayTab');
+    const makeupTab = document.getElementById('makeupTab');
+    const makeupHint = document.getElementById('makeupHint');
+    const methodsCard = document.getElementById('methodsCard');
+    const noteCard = document.getElementById('noteCard');
     let lineUserId = '';
     let displayName = '';
 
@@ -81,6 +121,43 @@
     let selectedMethodIds = new Set();
     let expandedMethodIds = new Set();
     let practiceFeelingTags = [];
+    let profileSettings = null;
+    let selectedDate = '';
+    let loadedDate = '';
+    let detectedTimezone = '';
+    const drafts = new Map();
+    const timezoneGroups = [
+      ['亞洲',[['Asia/Taipei','台北（台灣）'],['Asia/Hong_Kong','香港'],['Asia/Shanghai','上海／北京（中國）'],['Asia/Singapore','新加坡'],['Asia/Tokyo','東京（日本）'],['Asia/Seoul','首爾（韓國）']]],
+      ['歐洲',[['Europe/London','倫敦（英國）'],['Europe/Paris','巴黎（法國）'],['Europe/Berlin','柏林（德國）']]],
+      ['美洲',[['America/New_York','紐約（美國東岸）'],['America/Toronto','多倫多（加拿大東岸）'],['America/Chicago','芝加哥（美國中部）'],['America/Denver','丹佛（美國山區）'],['America/Los_Angeles','洛杉磯（美國西岸）'],['America/Vancouver','溫哥華（加拿大西岸）'],['Pacific/Honolulu','檀香山（夏威夷）']]],
+      ['大洋洲',[['Australia/Sydney','雪梨（澳洲）'],['Australia/Melbourne','墨爾本（澳洲）'],['Pacific/Auckland','奧克蘭（紐西蘭）']]]
+    ];
+
+    const timezoneName = (zone) => timezoneGroups.flatMap((group) => group[1]).find((item) => item[0] === zone)?.[1] || zone;
+    const renderTimezoneOptions = (selectedTimezone) => {
+      timezoneInput.replaceChildren();
+      const added = new Set();
+      if (detectedTimezone) {
+        const option = document.createElement('option'); option.value=detectedTimezone; option.textContent=`此裝置偵測到：${timezoneName(detectedTimezone)}`; timezoneInput.append(option); added.add(detectedTimezone);
+      }
+      timezoneGroups.forEach(([label,zones]) => { const group=document.createElement('optgroup');group.label=label;zones.forEach(([value,name])=>{if(added.has(value))return;const option=document.createElement('option');option.value=value;option.textContent=name;group.append(option);added.add(value);});if(group.children.length)timezoneInput.append(group); });
+      if (selectedTimezone && !added.has(selectedTimezone)) { const option=document.createElement('option');option.value=selectedTimezone;option.textContent=selectedTimezone;timezoneInput.append(option); }
+      timezoneInput.value=selectedTimezone||detectedTimezone||'Asia/Taipei';
+    };
+
+    const shortDate = (date) => date.slice(5).replace('-', '/');
+    const isMakeupMode = () => profileSettings && selectedDate === profileSettings.yesterday;
+    const renderDateTab = (button,label,detail) => { button.replaceChildren();const main=document.createElement('span');main.className='date-tab-main';main.textContent=label;const sub=document.createElement('span');sub.className='date-tab-sub';sub.textContent=detail;button.append(main,sub); };
+    const renderDateControls = () => {
+      timezoneLabel.textContent=`練功時區：${timezoneName(profileSettings.practiceTimezone)}`;
+      changeTimezone.hidden=!profileSettings.confirmed;
+      methodsCard.hidden=!profileSettings.confirmed;noteCard.hidden=!profileSettings.confirmed;submitButton.hidden=!profileSettings.confirmed;dateTabs.hidden=!profileSettings.confirmed;
+      renderDateTab(todayTab,'今天',shortDate(profileSettings.today));
+      renderDateTab(makeupTab,'補登',`${shortDate(profileSettings.yesterday)} · ${profileSettings.canMakeupYesterday?'12:00 前':'已截止'}`);
+      makeupTab.disabled=!profileSettings.canMakeupYesterday;todayTab.classList.toggle('active',selectedDate===profileSettings.today);makeupTab.classList.toggle('active',selectedDate===profileSettings.yesterday);
+      makeupHint.hidden=profileSettings.canMakeupYesterday;makeupHint.textContent=profileSettings.canMakeupYesterday?'':`昨天 ${shortDate(profileSettings.yesterday)} 的補登期限已於當地中午 12:00 結束。`;
+      document.querySelector('.container').classList.toggle('makeup-mode',isMakeupMode());submitButton.textContent=isMakeupMode()?`完成 ${shortDate(selectedDate)} 補登`:`完成 ${shortDate(selectedDate||profileSettings.today)} 打卡`;
+    };
 
     const noteLines = () => practiceNote.value.split('\n').map((line) => line.trim()).filter(Boolean);
     const renderFeelingTags = () => {
@@ -126,6 +203,8 @@
     const apiFetch = async (url, options = {}) => {
       const headers = new Headers(options.headers || {});
       headers.set('x-line-user-id', lineUserId);
+      const accessToken = liff.getAccessToken();
+      if (accessToken) headers.set('x-line-access-token', accessToken);
       if (!headers.has('Content-Type') && options.method && options.method !== 'GET') {
         headers.set('Content-Type', 'application/json');
       }
@@ -139,6 +218,17 @@
         throw new Error(body.error || 'Request failed');
       }
       return res.json();
+    };
+
+    const refreshProfile = async () => {
+      profileSettings = await apiFetch('/line/api/liff/profile');
+      renderDateControls();
+      return profileSettings;
+    };
+
+    const snapshotDraft = () => {
+      if (!loadedDate) return;
+      drafts.set(loadedDate, { selectedMethodIds: [...selectedMethodIds], practiceNote: practiceNote.value });
     };
 
     const normalizeSelectedIds = (methods, selectedIds) => {
@@ -276,6 +366,39 @@
       redrawMethods();
     };
 
+    const applyCheckinData = (data) => {
+      selectedDate = data.date;
+      loadedDate = data.date;
+      renderMethods(practiceMethods, data.selectedMethodIds);
+      practiceNote.value = data.practiceNote || mergeLegacyNotes(data.reflectionNote, data.bodyFeelingNote);
+      renderFeelingTags();
+      renderDateControls();
+      todayStatus.textContent = data.alreadyCheckedIn
+        ? `${shortDate(data.date)} 已打卡，可在期限內修改內容。`
+        : isMakeupMode() ? `${shortDate(data.date)} 尚未打卡，可於中午 12:00 前補登。` : `${shortDate(data.date)} 尚未打卡。`;
+      drafts.set(data.date, { selectedMethodIds: [...selectedMethodIds], practiceNote: practiceNote.value, alreadyCheckedIn: data.alreadyCheckedIn });
+    };
+
+    const loadCheckinDate = async (date) => {
+      snapshotDraft();
+      selectedDate = date;
+      renderDateControls();
+      submitStatus.textContent = '';
+      const draft = drafts.get(date);
+      if (draft) {
+        loadedDate = date;
+        renderMethods(practiceMethods, draft.selectedMethodIds);
+        practiceNote.value = draft.practiceNote;
+        renderFeelingTags();
+        todayStatus.textContent = draft.alreadyCheckedIn
+          ? `${shortDate(date)} 已打卡，可在期限內修改內容。`
+          : isMakeupMode() ? `${shortDate(date)} 尚未打卡，可於中午 12:00 前補登。` : `${shortDate(date)} 尚未打卡。`;
+        return;
+      }
+      todayStatus.textContent = '正在載入打卡資料...';
+      applyCheckinData(await apiFetch(`/line/api/liff/checkin?date=${encodeURIComponent(date)}`));
+    };
+
     methodsContainer.addEventListener('click', (event) => {
       const toggleButton = event.target.closest('button[data-action="toggle"]');
       if (!toggleButton) return;
@@ -345,23 +468,26 @@
         lineUserId = profile.userId;
         displayName = profile.displayName || '';
 
+        profileSettings = await apiFetch('/line/api/liff/profile');
+        detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+        renderTimezoneOptions(profileSettings.confirmed ? profileSettings.practiceTimezone : (detectedTimezone || profileSettings.practiceTimezone));
+        timezoneCard.hidden = profileSettings.confirmed;
+        selectedDate = profileSettings.today;
+        renderDateControls();
+        if (!profileSettings.confirmed) return;
+
         const [methodsResp, todayResp, feelingTagsResp] = await Promise.all([
           apiFetch('/line/api/liff/practice-methods').catch((error) => { throw new Error(`功法列表載入失敗：${error.message}`); }),
-          apiFetch('/line/api/liff/checkin/today').catch((error) => { throw new Error(`今日打卡資料載入失敗：${error.message}`); }),
+          apiFetch(`/line/api/liff/checkin?date=${encodeURIComponent(selectedDate)}`).catch((error) => { throw new Error(`打卡資料載入失敗：${error.message}`); }),
           apiFetch('/line/api/liff/practice-feeling-tags').catch((error) => {
             console.error('快速感受標籤載入失敗：', error);
             return { tags: [] };
           })
         ]);
 
-        renderMethods(methodsResp.methods, todayResp.selectedMethodIds);
-        practiceNote.value = todayResp.practiceNote || mergeLegacyNotes(todayResp.reflectionNote, todayResp.bodyFeelingNote);
+        practiceMethods = methodsResp.methods;
         practiceFeelingTags = feelingTagsResp.tags;
-        renderFeelingTags();
-
-        todayStatus.textContent = todayResp.alreadyCheckedIn
-          ? '你今天已打卡，可修改今日內容後重新送出。'
-          : '今天尚未打卡，請完成以下內容後送出。';
+        applyCheckinData(todayResp);
       } catch (error) {
         const msg = error && error.message ? error.message : String(error);
         if (msg.includes('access_token')) {
@@ -383,6 +509,11 @@
       setStatus(submitStatus, '正在儲存打卡資料...');
 
       try {
+        const previousToday = profileSettings.today;
+        await refreshProfile();
+        if (previousToday !== profileSettings.today && selectedDate === previousToday) {
+          throw new Error('當地日期已變更，請確認練功日期後再次送出。');
+        }
         const selectedCount = methodIds.length;
         const result = await apiFetch('/line/api/liff/checkin', {
           method: 'POST',
@@ -394,19 +525,21 @@
             methodIdsCsv: methodIds.join(','),
             methodCount: selectedCount,
             displayName,
+            checkinDate: selectedDate,
             practiceNote: practiceNote.value,
             reflectionNote: practiceNote.value,
             bodyFeelingNote: ''
           })
         });
         const streakText = result.stats ? `｜連續 ${result.stats.currentStreak} 天｜總計 ${result.stats.totalCheckins} 天` : '';
-        setStatus(submitStatus, `打卡成功：${result.selectedMethods.join('、')}${streakText}`, 'success');
-        todayStatus.textContent = '今天的打卡內容已儲存，你可以再次修改後重新送出。';
+        setStatus(submitStatus, `${result.entryKind === 'makeup' ? `${shortDate(result.date)} 補登成功：` : `${shortDate(result.date)} 打卡成功：`}${result.selectedMethods.join('、')}${streakText}`, 'success');
+        todayStatus.textContent = `${shortDate(result.date)} 的${result.entryKind === 'makeup' ? '補登' : '打卡'}內容已儲存。`;
 
         const summaryLines = [
-          '✅ 打卡成功',
+          result.entryKind === 'makeup' ? '✅ 補登成功' : '✅ 打卡成功',
           '',
-          `今日功法：${result.selectedMethods.join('、')}`
+          `練功日期：${result.date}`,
+          `練習功法：${result.selectedMethods.join('、')}`
         ];
 
         if (result.stats) {
@@ -440,6 +573,39 @@
       } finally {
         submitButton.disabled = false;
       }
+    });
+
+    todayTab.addEventListener('click', async () => {
+      try { await refreshProfile(); await loadCheckinDate(profileSettings.today); }
+      catch (error) { setStatus(submitStatus, `載入失敗：${error.message}`, 'error'); }
+    });
+    makeupTab.addEventListener('click', async () => {
+      try {
+        await refreshProfile();
+        if (!profileSettings.canMakeupYesterday) throw new Error(`昨天 ${shortDate(profileSettings.yesterday)} 的補登期限已結束。`);
+        await loadCheckinDate(profileSettings.yesterday);
+      } catch (error) { setStatus(submitStatus, `載入失敗：${error.message}`, 'error'); }
+    });
+    changeTimezone.addEventListener('click', () => {
+      if (!profileSettings) return;
+      renderTimezoneOptions(profileSettings.practiceTimezone);
+      timezoneCard.hidden = false;
+      timezoneCard.scrollIntoView({ behavior:'smooth', block:'start' });
+    });
+    saveTimezone.addEventListener('click', async () => {
+      saveTimezone.disabled = true;
+      setStatus(timezoneStatus, '儲存中...');
+      try {
+        profileSettings = await apiFetch('/line/api/liff/profile/practice-timezone', { method:'PATCH', body:JSON.stringify({ timezone:timezoneInput.value }) });
+        timezoneCard.hidden = profileSettings.confirmed;
+        selectedDate = profileSettings.today;
+        drafts.clear();
+        renderDateControls();
+        setStatus(timezoneStatus, '練功時區已儲存。', 'success');
+        await load();
+      } catch (error) {
+        setStatus(timezoneStatus, `時區儲存失敗：${error.message}`, 'error');
+      } finally { saveTimezone.disabled = false; }
     });
 
     load();

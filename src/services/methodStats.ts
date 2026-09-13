@@ -70,34 +70,34 @@ interface PeriodRange {
     end: Date;
 }
 
-export const getMethodPeriodRange = (period: MethodPeriod): PeriodRange => {
-    const now = moment().tz(TIMEZONE);
+export const getMethodPeriodRange = (period: MethodPeriod, timezone = TIMEZONE): PeriodRange => {
+    const now = moment().tz(timezone);
     let start, end;
 
     switch (period) {
         case '30d':
             start = now.clone().subtract(29, 'days').startOf('day');
-            end = now.clone().add(1, 'millisecond'); // Up to now
+            end = now.clone().add(1, 'day').startOf('day');
             break;
         case '90d':
             start = now.clone().subtract(89, 'days').startOf('day');
-            end = now.clone().add(1, 'millisecond');
+            end = now.clone().add(1, 'day').startOf('day');
             break;
         case 'month':
             start = now.clone().startOf('month');
-            end = now.clone().endOf('month').add(1, 'millisecond');
+            end = now.clone().startOf('month').add(1, 'month');
             break;
         case 'quarter':
             start = now.clone().startOf('quarter');
-            end = now.clone().endOf('quarter').add(1, 'millisecond');
+            end = now.clone().startOf('quarter').add(1, 'quarter');
             break;
         case 'year':
             start = now.clone().startOf('year');
-            end = now.clone().endOf('year').add(1, 'millisecond');
+            end = now.clone().startOf('year').add(1, 'year');
             break;
         default:
             start = now.clone().subtract(29, 'days').startOf('day');
-            end = now.clone().add(1, 'millisecond');
+            end = now.clone().add(1, 'day').startOf('day');
             break;
     }
     return { start: start.toDate(), end: end.toDate() };
@@ -115,14 +115,17 @@ const getDictCTE = () => {
 
 export const getCommunityMethodSummary = async (period: MethodPeriod = '30d') => {
     const { start, end } = getMethodPeriodRange(period);
+    const startDate = moment(start).tz(TIMEZONE).format('YYYY-MM-DD');
+    const endDate = moment(end).tz(TIMEZONE).format('YYYY-MM-DD');
     
     // Total checkin days for community in period
     const totalDaysQuery = `
-        SELECT COUNT(DISTINCT line_user_id || DATE(created_at AT TIME ZONE $1)) AS total_checkin_days
+        SELECT COUNT(DISTINCT line_user_id || COALESCE(checkin_date, DATE(created_at AT TIME ZONE $1))) AS total_checkin_days
         FROM checkin_logs
-        WHERE created_at >= $2 AND created_at < $3
+        WHERE COALESCE(checkin_date, DATE(created_at AT TIME ZONE $1)) >= $2::date
+          AND COALESCE(checkin_date, DATE(created_at AT TIME ZONE $1)) < $3::date
     `;
-    const totalRes = await db.query(totalDaysQuery, [TIMEZONE, start, end]);
+    const totalRes = await db.query(totalDaysQuery, [TIMEZONE, startDate, endDate]);
     const totalCheckinDays = parseInt(totalRes.rows[0]?.total_checkin_days || '0');
 
     const query = `
@@ -133,13 +136,15 @@ export const getCommunityMethodSummary = async (period: MethodPeriod = '30d') =>
             JOIN checkin_method_selections s ON s.checkin_log_id = l.id
             JOIN practice_methods pm ON pm.id = s.practice_method_id
             LEFT JOIN practice_methods parent_pm ON parent_pm.id = pm.parent_id
-            WHERE l.created_at >= $2 AND l.created_at < $3
+            WHERE COALESCE(l.checkin_date, DATE(l.created_at AT TIME ZONE $1)) >= $2::date
+              AND COALESCE(l.checkin_date, DATE(l.created_at AT TIME ZONE $1)) < $3::date
         ),
         fallback_logs AS (
-            SELECT l.id, l.line_user_id, (l.created_at AT TIME ZONE $1)::date AS local_date, COALESCE(l.note, '') AS note
+            SELECT l.id, l.line_user_id, COALESCE(l.checkin_date, (l.created_at AT TIME ZONE $1)::date) AS local_date, COALESCE(l.note, '') AS note
             FROM checkin_logs l
             LEFT JOIN checkin_method_selections s ON s.checkin_log_id = l.id
-            WHERE l.created_at >= $2 AND l.created_at < $3 AND s.id IS NULL
+            WHERE COALESCE(l.checkin_date, DATE(l.created_at AT TIME ZONE $1)) >= $2::date
+              AND COALESCE(l.checkin_date, DATE(l.created_at AT TIME ZONE $1)) < $3::date AND s.id IS NULL
         ),
         fallback_matched AS (
             SELECT DISTINCT l.line_user_id, l.local_date, md.method_name
@@ -158,7 +163,7 @@ export const getCommunityMethodSummary = async (period: MethodPeriod = '30d') =>
         GROUP BY method_name
         ORDER BY matched_days DESC
     `;
-    const { rows } = await db.query(query, [TIMEZONE, start, end]);
+    const { rows } = await db.query(query, [TIMEZONE, startDate, endDate]);
     
     const totalMatched = rows.reduce((sum, r) => sum + parseInt(r.matched_days), 0);
     
@@ -186,15 +191,19 @@ export const searchUsersByName = async (keyword: string) => {
     return rows;
 };
 
-export const getUserMethodAnalysis = async (userId: string, period: MethodPeriod) => {
-    const { start, end } = getMethodPeriodRange(period);
+export const getUserMethodAnalysis = async (userId: string, period: MethodPeriod, timezone = TIMEZONE) => {
+    const { start, end } = getMethodPeriodRange(period, timezone);
+    const startDate = moment(start).tz(timezone).format('YYYY-MM-DD');
+    const endDate = moment(end).tz(timezone).format('YYYY-MM-DD');
 
     const totalDaysQuery = `
         SELECT COUNT(DISTINCT COALESCE(checkin_date, DATE(created_at AT TIME ZONE $1))) AS total_checkin_days
         FROM checkin_logs
-        WHERE line_user_id = $2 AND created_at >= $3 AND created_at < $4
+        WHERE line_user_id = $2
+          AND COALESCE(checkin_date, DATE(created_at AT TIME ZONE $1)) >= $3::date
+          AND COALESCE(checkin_date, DATE(created_at AT TIME ZONE $1)) < $4::date
     `;
-    const totalRes = await db.query(totalDaysQuery, [TIMEZONE, userId, start, end]);
+    const totalRes = await db.query(totalDaysQuery, [TIMEZONE, userId, startDate, endDate]);
     const totalCheckinDays = parseInt(totalRes.rows[0]?.total_checkin_days || '0');
 
     const query = `
@@ -205,13 +214,17 @@ export const getUserMethodAnalysis = async (userId: string, period: MethodPeriod
             JOIN checkin_method_selections s ON s.checkin_log_id = l.id
             JOIN practice_methods pm ON pm.id = s.practice_method_id
             LEFT JOIN practice_methods parent_pm ON parent_pm.id = pm.parent_id
-            WHERE l.line_user_id = $2 AND l.created_at >= $3 AND l.created_at < $4
+            WHERE l.line_user_id = $2
+              AND COALESCE(l.checkin_date, DATE(l.created_at AT TIME ZONE $1)) >= $3::date
+              AND COALESCE(l.checkin_date, DATE(l.created_at AT TIME ZONE $1)) < $4::date
         ),
         fallback_logs AS (
-            SELECT l.id, (l.created_at AT TIME ZONE $1)::date AS local_date, COALESCE(l.note, '') AS note
+            SELECT l.id, COALESCE(l.checkin_date, (l.created_at AT TIME ZONE $1)::date) AS local_date, COALESCE(l.note, '') AS note
             FROM checkin_logs l
             LEFT JOIN checkin_method_selections s ON s.checkin_log_id = l.id
-            WHERE l.line_user_id = $2 AND l.created_at >= $3 AND l.created_at < $4 AND s.id IS NULL
+            WHERE l.line_user_id = $2
+              AND COALESCE(l.checkin_date, DATE(l.created_at AT TIME ZONE $1)) >= $3::date
+              AND COALESCE(l.checkin_date, DATE(l.created_at AT TIME ZONE $1)) < $4::date AND s.id IS NULL
         ),
         fallback_matched AS (
             SELECT DISTINCT l.local_date, md.method_name
@@ -230,7 +243,7 @@ export const getUserMethodAnalysis = async (userId: string, period: MethodPeriod
         GROUP BY method_name
         ORDER BY matched_days DESC
     `;
-    const { rows } = await db.query(query, [TIMEZONE, userId, start, end]);
+    const { rows } = await db.query(query, [TIMEZONE, userId, startDate, endDate]);
 
     const totalMatched = rows.reduce((sum, r) => sum + parseInt(r.matched_days), 0);
 

@@ -41,7 +41,7 @@ test('ships one practice-note field and an idempotent legacy-data migration', ()
     assert.doesNotMatch(checkinView, /id="reflectionNote"|id="bodyFeelingNote"/);
     assert.match(checkinView, /practiceNote: practiceNote\.value/);
     assert.match(checkinView, /reflectionNote: practiceNote\.value/);
-    assert.match(checkinView, /mergeLegacyNotes\(todayResp\.reflectionNote, todayResp\.bodyFeelingNote\)/);
+    assert.match(checkinView, /mergeLegacyNotes\(data\.reflectionNote,\s*data\.bodyFeelingNote\)/);
     assert.match(checkinView, /id="feelingTags"/);
     assert.match(checkinView, /practice-feeling-tags/);
     assert.match(checkinView, /toggleFeelingTag/);

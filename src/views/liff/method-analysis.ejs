@@ -101,7 +101,8 @@
       const finalUrl = `${url}${separator}displayName=${encodeURIComponent(displayName)}`;
       const res = await fetch(finalUrl, {
         headers: {
-          'x-line-user-id': lineUserId
+          'x-line-user-id': lineUserId,
+          'x-line-access-token': liff.getAccessToken() || ''
         }
       });
       if (!res.ok) {

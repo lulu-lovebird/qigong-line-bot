@@ -88,6 +88,8 @@
     const apiFetch = async (url, options = {}) => {
       const headers = new Headers(options.headers || {});
       headers.set('x-line-user-id', lineUserId);
+      const accessToken = liff.getAccessToken();
+      if (accessToken) headers.set('x-line-access-token', accessToken);
       const res = await fetch(url, { ...options, headers });
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: 'Request failed' }));
@@ -97,9 +99,10 @@
     };
 
     const getWeekday = (dateStr) => {
-      const d = new Date(dateStr);
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const d = new Date(Date.UTC(year, month - 1, day));
       const days = ['日', '一', '二', '三', '四', '五', '六'];
-      return days[d.getDay()];
+      return days[d.getUTCDay()];
     };
 
     const escapeHtml = (value) => String(value || '')
@@ -118,9 +121,7 @@
 
     const renderHistory = (data) => {
       monthLabel.textContent = data.monthLabel;
-      const now = new Date();
-      const nowMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      nextMonthBtn.disabled = data.month >= nowMonth;
+      nextMonthBtn.disabled = data.month >= data.currentMonth;
 
       statStreak.textContent = data.stats ? `${data.stats.currentStreak}天` : '-';
       statLongest.textContent = data.stats ? `${data.stats.longestStreak}天` : '-';
@@ -150,10 +151,14 @@
         const noteHtml = practiceNote
           ? `<div class="history-note"><strong>心得與感受：</strong>${escapeHtml(practiceNote)}</div>`
           : '';
+        const makeupHtml = entry.entryKind === 'makeup'
+          ? `<span class="method-tag" style="background:#fef3c7;color:#92400e;">補登</span><div class="weekday">補登時間：${escapeHtml(new Intl.DateTimeFormat('zh-TW',{dateStyle:'medium',timeStyle:'short',timeZone:entry.practiceTimezone}).format(new Date(entry.recordedAt)))}</div>`
+          : '';
 
         return `
           <div class="history-item">
             <div class="history-date">${entry.date}<span class="weekday">（週${weekday}）</span></div>
+            ${makeupHtml}
             ${methodsHtml}
             ${noteHtml}
           </div>

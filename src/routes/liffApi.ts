@@ -1,12 +1,41 @@
 import { Request, Router } from 'express';
-import { getPracticeMethods, getTodayLineCheckin, saveTodayLineCheckin, upsertLineUser, evaluateLineLiffBadges, mergeLegacyPracticeNotes } from '../services/lineCheckin';
+import { getLineCheckinForDate, getPracticeMethods, getTodayLineCheckin, saveLineCheckin, upsertLineUser, mergeLegacyPracticeNotes } from '../services/lineCheckin';
 import { db } from '../db';
 import moment from 'moment-timezone';
 import { buildUserMethodReview, getUserMethodAnalysis, getUserPracticeJournal } from '../services/methodStats';
 import { generateMethodReviewWithLlm } from '../services/methodReviewLlm';
 import { getPracticeFeelingTags } from '../services/practiceFeelingTags';
+import { getPracticeTimezoneSettings, updatePracticeTimezone } from '../services/practiceTimezone';
 
 const router = Router();
+const lineLoginChannelId = process.env.LINE_LOGIN_CHANNEL_ID || '';
+
+const requireVerifiedLineUser = async (req: Request, res: any, next: any) => {
+    const accessToken = req.header('x-line-access-token') || '';
+    if (!accessToken) return res.status(401).json({ error: 'Missing LINE access token' });
+    try {
+        const [verifyResponse, profileResponse] = await Promise.all([
+            fetch(`https://api.line.me/oauth2/v2.1/verify?access_token=${encodeURIComponent(accessToken)}`),
+            fetch('https://api.line.me/v2/profile', { headers: { Authorization: `Bearer ${accessToken}` } })
+        ]);
+        if (!verifyResponse.ok || !profileResponse.ok) return res.status(401).json({ error: 'Invalid LINE access token' });
+        const verification = await verifyResponse.json() as { client_id?: string; expires_in?: number };
+        if (!lineLoginChannelId) return res.status(500).json({ error: 'LINE_LOGIN_CHANNEL_ID is not configured' });
+        if (!Number.isFinite(verification.expires_in) || Number(verification.expires_in) <= 0) {
+            return res.status(401).json({ error: 'Expired LINE access token' });
+        }
+        if (!verification.client_id || String(verification.client_id) !== lineLoginChannelId) {
+            return res.status(401).json({ error: 'LINE access token belongs to another channel' });
+        }
+        const profile = await profileResponse.json() as { userId?: string; displayName?: string };
+        if (!profile.userId) return res.status(401).json({ error: 'Invalid LINE profile' });
+        (req as any).verifiedLineProfile = profile;
+        next();
+    } catch (error) {
+        console.error('[liff-api] LINE token verification failed', error);
+        res.status(503).json({ error: 'LINE identity verification unavailable' });
+    }
+};
 
 const parseMethodIds = (raw: unknown): number[] => {
     if (Array.isArray(raw)) {
@@ -50,28 +79,11 @@ const parseMethodIdsFromRequest = (req: Request): number[] => {
 };
 
 const resolveLineUser = (req: Request) => {
+    const verified = (req as any).verifiedLineProfile as { userId?: string; displayName?: string } | undefined;
+    if (verified?.userId) return { lineUserId: verified.userId, displayName: verified.displayName || '' };
     const lineUserId = (req.header('x-line-user-id') || req.body?.lineUserId || req.query?.lineUserId || '').toString();
     const displayName = (req.header('x-line-display-name') || req.body?.displayName || req.query?.displayName || '').toString();
     return { lineUserId, displayName };
-};
-
-const getUserBadgesSnapshot = async (lineUserId: string) => {
-    const { rows } = await db.query(
-        `SELECT ub.badge_id, ub.earned_year, b.name, b.emoji, b.description
-         FROM user_badges ub
-         JOIN badges b ON b.id = ub.badge_id
-         WHERE ub.line_user_id = $1`,
-        [lineUserId]
-    );
-
-    return rows.map((row) => ({
-        key: `${row.badge_id}:${row.earned_year}`,
-        badgeId: row.badge_id,
-        earnedYear: row.earned_year,
-        name: row.name,
-        emoji: row.emoji || '',
-        description: row.description || ''
-    }));
 };
 
 router.get('/practice-methods', async (req, res) => {
@@ -86,6 +98,30 @@ router.get('/practice-methods', async (req, res) => {
     }
 });
 
+router.get('/profile', requireVerifiedLineUser, async (req, res) => {
+    try {
+        const { lineUserId, displayName } = resolveLineUser(req);
+        if (!lineUserId) return res.status(400).json({ error: 'Missing lineUserId' });
+        await upsertLineUser(lineUserId, displayName || null);
+        res.json(await getPracticeTimezoneSettings(lineUserId));
+    } catch (error) {
+        console.error('[liff-api] failed to load profile', error);
+        res.status(500).json({ error: 'Failed to load profile' });
+    }
+});
+
+router.patch('/profile/practice-timezone', requireVerifiedLineUser, async (req, res) => {
+    try {
+        const { lineUserId, displayName } = resolveLineUser(req);
+        if (!lineUserId) return res.status(400).json({ error: 'Missing lineUserId' });
+        await upsertLineUser(lineUserId, displayName || null);
+        res.json(await updatePracticeTimezone(lineUserId, req.body?.timezone));
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to update practice timezone';
+        res.status(message.includes('timezone') || message.includes('24 hours') || message.includes('calendar date') ? 400 : 500).json({ error: message });
+    }
+});
+
 router.get('/practice-feeling-tags', async (_req, res) => {
     try {
         res.json({ tags: await getPracticeFeelingTags() });
@@ -95,7 +131,7 @@ router.get('/practice-feeling-tags', async (_req, res) => {
     }
 });
 
-router.get('/checkin/today', async (req, res) => {
+router.get('/checkin/today', requireVerifiedLineUser, async (req, res) => {
     const startedAt = Date.now();
     try {
         const { lineUserId, displayName } = resolveLineUser(req);
@@ -107,6 +143,20 @@ router.get('/checkin/today', async (req, res) => {
     } catch (error) {
         console.error(`[liff-api] failed to load today checkin after ${Date.now() - startedAt}ms`, error);
         res.status(500).json({ error: 'Failed to load today checkin' });
+    }
+});
+
+router.get('/checkin', requireVerifiedLineUser, async (req, res) => {
+    try {
+        const { lineUserId, displayName } = resolveLineUser(req);
+        if (!lineUserId) return res.status(400).json({ error: 'Missing lineUserId' });
+        await upsertLineUser(lineUserId, displayName || null);
+        const settings = await getPracticeTimezoneSettings(lineUserId);
+        const requestedDate = typeof req.query.date === 'string' ? req.query.date : settings.today;
+        res.json(await getLineCheckinForDate(lineUserId, requestedDate));
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to load check-in';
+        res.status(message.includes('date') || message.includes('window') || message.includes('eligible') || message.includes('timezone') ? 400 : 500).json({ error: message });
     }
 });
 
@@ -136,15 +186,18 @@ const getPeriodRange = (period: string) => {
 };
 
 const computeStreaksInRange = async (start: Date, end: Date) => {
+    const startDate = moment(start).tz(TIMEZONE).format('YYYY-MM-DD');
+    const endDate = moment(end).tz(TIMEZONE).format('YYYY-MM-DD');
     const query = `
-        SELECT c.line_user_id, u.display_name, DATE(c.created_at AT TIME ZONE $1) AS d
+        SELECT c.line_user_id, u.display_name, COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1)) AS d
         FROM checkin_logs c
         JOIN users u ON u.line_user_id = c.line_user_id
-        WHERE c.created_at >= $2 AND c.created_at < $3
+        WHERE COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1)) >= $2::date
+          AND COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1)) < $3::date
         GROUP BY c.line_user_id, u.display_name, d
         ORDER BY c.line_user_id, d ASC;
     `;
-    const { rows } = await db.query(query, [TIMEZONE, start, end]);
+    const { rows } = await db.query(query, [TIMEZONE, startDate, endDate]);
     if (rows.length === 0) return [];
 
     const userStreaks = new Map<string, { displayName: string; maxStreak: number }>();
@@ -208,15 +261,16 @@ router.get('/leaderboard', async (req, res) => {
         }
 
         const query = `
-            SELECT u.display_name, COUNT(DISTINCT DATE(c.created_at AT TIME ZONE $1)) AS value
+            SELECT u.display_name, COUNT(DISTINCT COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1))) AS value
             FROM checkin_logs c
             JOIN users u ON u.line_user_id = c.line_user_id
-            WHERE c.created_at >= $2 AND c.created_at < $3
+            WHERE COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1)) >= $2::date
+              AND COALESCE(c.checkin_date, DATE(c.created_at AT TIME ZONE $1)) < $3::date
             GROUP BY u.display_name
             ORDER BY value DESC, u.display_name ASC
             LIMIT 10;
         `;
-        const { rows } = await db.query(query, [TIMEZONE, range.start, range.end]);
+        const { rows } = await db.query(query, [TIMEZONE, moment(range.start).tz(TIMEZONE).format('YYYY-MM-DD'), moment(range.end).tz(TIMEZONE).format('YYYY-MM-DD')]);
         res.json({ period, rankBy, label: range.label, displayRange: range.displayRange, entries: rows.map((r) => ({ displayName: r.display_name, value: Number(r.value) })) });
     } catch (error) {
         console.error('[liff-api] failed to load leaderboard', error);
@@ -224,16 +278,17 @@ router.get('/leaderboard', async (req, res) => {
     }
 });
 
-router.get('/history', async (req, res) => {
+router.get('/history', requireVerifiedLineUser, async (req, res) => {
     try {
         const { lineUserId } = resolveLineUser(req);
         if (!lineUserId) return res.status(400).json({ error: 'Missing lineUserId' });
 
-        const now = moment().tz(TIMEZONE);
+        const practiceTimezone = (await getPracticeTimezoneSettings(lineUserId)).practiceTimezone;
+        const now = moment().tz(practiceTimezone);
         const monthParam = req.query.month?.toString();
         let targetMonth: moment.Moment;
         if (monthParam) {
-            targetMonth = moment.tz(monthParam, 'YYYY-MM', TIMEZONE);
+            targetMonth = moment.tz(monthParam, 'YYYY-MM', practiceTimezone);
             if (!targetMonth.isValid()) targetMonth = now.clone();
         } else {
             targetMonth = now.clone();
@@ -244,6 +299,7 @@ router.get('/history', async (req, res) => {
 
         const logs = await db.query(
             `SELECT cl.id, cl.checkin_date, cl.note, cl.practice_note, cl.source,
+                    cl.entry_kind, cl.practice_timezone, cl.created_at,
                     ARRAY_AGG(pm.name_zh ORDER BY pm.sort_order ASC) AS method_names
              FROM checkin_logs cl
              LEFT JOIN checkin_method_selections cms ON cms.checkin_log_id = cl.id
@@ -293,6 +349,7 @@ router.get('/history', async (req, res) => {
 
         res.json({
             month: targetMonth.format('YYYY-MM'),
+            currentMonth: now.format('YYYY-MM'),
             monthLabel: targetMonth.format('YYYY年 MM月'),
             entries: logs.rows.map((row) => ({
                 id: row.id,
@@ -302,7 +359,10 @@ router.get('/history', async (req, res) => {
                 practiceNote: row.practice_note,
                 reflectionNote: row.practice_note,
                 bodyFeelingNote: '',
-                source: row.source
+                source: row.source,
+                entryKind: row.entry_kind === 'makeup' ? 'makeup' : 'regular',
+                practiceTimezone: row.practice_timezone || practiceTimezone,
+                recordedAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at)
             })),
             stats: userStats.rows[0]
                 ? {
@@ -320,15 +380,16 @@ router.get('/history', async (req, res) => {
     }
 });
 
-router.get('/method-analysis', async (req, res) => {
+router.get('/method-analysis', requireVerifiedLineUser, async (req, res) => {
     try {
         const { lineUserId, displayName } = resolveLineUser(req);
         if (!lineUserId) return res.status(400).json({ error: 'Missing lineUserId' });
         await upsertLineUser(lineUserId, displayName || null);
+        const timezone = (await getPracticeTimezoneSettings(lineUserId)).practiceTimezone;
 
         const [analysis30d, analysis90d, journal] = await Promise.all([
-            getUserMethodAnalysis(lineUserId, '30d'),
-            getUserMethodAnalysis(lineUserId, '90d'),
+            getUserMethodAnalysis(lineUserId, '30d', timezone),
+            getUserMethodAnalysis(lineUserId, '90d', timezone),
             getUserPracticeJournal(lineUserId)
         ]);
         const fallbackReviewText = buildUserMethodReview(analysis30d, analysis90d);
@@ -346,7 +407,7 @@ router.get('/method-analysis', async (req, res) => {
     }
 });
 
-router.get('/achievements', async (req, res) => {
+router.get('/achievements', requireVerifiedLineUser, async (req, res) => {
     try {
         const { lineUserId, displayName } = resolveLineUser(req);
         if (!lineUserId) return res.status(400).json({ error: 'Missing lineUserId' });
@@ -397,7 +458,7 @@ router.get('/achievements', async (req, res) => {
     }
 });
 
-router.post('/checkin', async (req, res) => {
+router.post('/checkin', requireVerifiedLineUser, async (req, res) => {
     try {
         const { lineUserId, displayName } = resolveLineUser(req);
         if (!lineUserId) return res.status(400).json({ error: 'Missing lineUserId' });
@@ -422,19 +483,8 @@ router.post('/checkin', async (req, res) => {
             practiceNoteLength: practiceNote.length
         });
 
-        const beforeBadges = await getUserBadgesSnapshot(lineUserId);
-        const beforeBadgeKeys = new Set(beforeBadges.map((badge) => badge.key));
-
-        const saved = await saveTodayLineCheckin(lineUserId, methodIds, practiceNote);
-        let unlockedBadges: Array<{ badgeId: string; earnedYear: number; name: string; emoji: string; description: string }> = [];
-        if (!saved.alreadyCheckedIn) {
-            await evaluateLineLiffBadges(lineUserId, saved.selectedMethods, saved.selectedMethodCodes || []);
-            const afterBadges = await getUserBadgesSnapshot(lineUserId);
-            unlockedBadges = afterBadges
-                .filter((badge) => !beforeBadgeKeys.has(badge.key))
-                .map(({ key, ...badge }) => badge);
-        }
-        res.json({ ok: true, ...saved, unlockedBadges });
+        const saved = await saveLineCheckin(lineUserId, methodIds, practiceNote, req.body?.checkinDate);
+        res.json({ ok: true, ...saved });
     } catch (error) {
         console.error('[liff-api] failed to save checkin', error);
         res.status(400).json({ error: error instanceof Error ? error.message : 'Failed to save check-in' });

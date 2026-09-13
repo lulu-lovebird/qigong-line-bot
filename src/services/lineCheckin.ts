@@ -2,6 +2,7 @@ import moment from 'moment-timezone';
 import { db } from '../db';
 import { evaluateBadges } from '../badges';
 import { createAsyncTtlCache } from '../utils/asyncTtlCache';
+import { getPracticeDateWindow, getPracticeTimezoneSettings, validateCheckinDate } from './practiceTimezone';
 
 const TIMEZONE = 'Asia/Taipei';
 const PRACTICE_METHOD_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -35,6 +36,15 @@ export interface TodayLineCheckinResponse {
     practiceNote: string;
     reflectionNote: string;
     bodyFeelingNote: string;
+    entryKind: 'regular' | 'makeup';
+    practiceTimezone: string;
+}
+
+export interface LineUserStats {
+    currentStreak: number;
+    longestStreak: number;
+    totalCheckins: number;
+    lastCheckinDate: string | null;
 }
 
 export const upsertLineUser = async (lineUserId: string, displayName?: string | null) => {
@@ -148,24 +158,28 @@ export const getLeafCodesByParentCode = async (): Promise<Map<string, string[]>>
     return leafCodesByParentCode;
 };
 
-export const getTodayLineCheckin = async (lineUserId: string): Promise<TodayLineCheckinResponse> => {
-    const today = moment().tz(TIMEZONE).format('YYYY-MM-DD');
+export const getLineCheckinForDate = async (lineUserId: string, checkinDate: string): Promise<TodayLineCheckinResponse> => {
+    const settings = await getPracticeTimezoneSettings(lineUserId);
+    const target = validateCheckinDate(checkinDate, settings);
+    if (!settings.confirmed && target.entryKind === 'makeup') throw new Error('Confirm your practice timezone before making up yesterday');
     const { rows } = await db.queryWithRetry(
-        `SELECT id, practice_note, reflection_note, body_feeling_note
+        `SELECT id, practice_note, reflection_note, body_feeling_note, entry_kind, practice_timezone
          FROM checkin_logs
          WHERE line_user_id = $1 AND checkin_date = $2`,
-        [lineUserId, today]
+        [lineUserId, target.checkinDate]
     );
 
     if (rows.length === 0) {
         return {
-            date: today,
+            date: target.checkinDate,
             alreadyCheckedIn: false,
             checkinLogId: null,
             selectedMethodIds: [],
             practiceNote: '',
             reflectionNote: '',
-            bodyFeelingNote: ''
+            bodyFeelingNote: '',
+            entryKind: target.entryKind,
+            practiceTimezone: settings.practiceTimezone
         };
     }
 
@@ -186,14 +200,21 @@ export const getTodayLineCheckin = async (lineUserId: string): Promise<TodayLine
 
     const practiceNote = checkin.practice_note || mergeLegacyPracticeNotes(checkin.reflection_note, checkin.body_feeling_note);
     return {
-        date: today,
+        date: target.checkinDate,
         alreadyCheckedIn: true,
         checkinLogId: checkin.id,
         selectedMethodIds: normalizedSelectedIds,
         practiceNote,
         reflectionNote: checkin.reflection_note || '',
-        bodyFeelingNote: checkin.body_feeling_note || ''
+        bodyFeelingNote: checkin.body_feeling_note || '',
+        entryKind: checkin.entry_kind === 'makeup' ? 'makeup' : 'regular',
+        practiceTimezone: checkin.practice_timezone || settings.practiceTimezone
     };
+};
+
+export const getTodayLineCheckin = async (lineUserId: string) => {
+    const settings = await getPracticeTimezoneSettings(lineUserId);
+    return getLineCheckinForDate(lineUserId, settings.today);
 };
 
 export const mergeLegacyPracticeNotes = (reflectionNote: string | null = '', bodyFeelingNote: string | null = '') => {
@@ -210,10 +231,51 @@ export const buildLegacyNote = (methodNames: string[], practiceNote = '') => {
     return parts.join('；');
 };
 
-export const saveTodayLineCheckin = async (
+export const calculateLineUserStats = (dateValues: Array<string | Date>, practiceTimezone: string, now = moment()): LineUserStats => {
+    const dates = [...new Set(dateValues.map((value) => moment(value).format('YYYY-MM-DD')))]
+        .sort()
+        .map((value) => moment.tz(value, 'YYYY-MM-DD', practiceTimezone));
+    if (!dates.length) return { currentStreak: 0, longestStreak: 0, totalCheckins: 0, lastCheckinDate: null };
+
+    let longestStreak = 1;
+    let runningStreak = 1;
+    for (let index = 1; index < dates.length; index += 1) {
+        runningStreak = dates[index].diff(dates[index - 1], 'days') === 1 ? runningStreak + 1 : 1;
+        longestStreak = Math.max(longestStreak, runningStreak);
+    }
+
+    const today = now.clone().tz(practiceTimezone).startOf('day');
+    const lastDate = dates[dates.length - 1];
+    let currentStreak = 0;
+    if (lastDate.isSame(today, 'day') || lastDate.isSame(today.clone().subtract(1, 'day'), 'day')) {
+        currentStreak = 1;
+        for (let index = dates.length - 1; index > 0 && dates[index].diff(dates[index - 1], 'days') === 1; index -= 1) currentStreak += 1;
+    }
+    return { currentStreak, longestStreak, totalCheckins: dates.length, lastCheckinDate: lastDate.format('YYYY-MM-DD') };
+};
+
+const recalculateLineUserStats = async (client: any, lineUserId: string, practiceTimezone: string): Promise<LineUserStats> => {
+    const { rows } = await client.query(
+        `SELECT checkin_date FROM checkin_logs
+         WHERE line_user_id = $1 AND checkin_date IS NOT NULL
+         ORDER BY checkin_date ASC`,
+        [lineUserId]
+    );
+    const stats = calculateLineUserStats(rows.map((row: { checkin_date: string | Date }) => row.checkin_date), practiceTimezone);
+    await client.query(
+        `UPDATE users
+         SET current_streak = $2, longest_streak = $3, total_checkins = $4, last_checkin_date = $5
+         WHERE line_user_id = $1`,
+        [lineUserId, stats.currentStreak, stats.longestStreak, stats.totalCheckins, stats.lastCheckinDate]
+    );
+    return stats;
+};
+
+export const saveLineCheckin = async (
     lineUserId: string,
     methodIds: number[],
-    practiceNote: string
+    practiceNote: string,
+    checkinDate?: unknown
 ) => {
     const uniqueMethodIds = Array.from(new Set(methodIds.filter((id) => Number.isFinite(id) && id > 0)));
 
@@ -221,13 +283,22 @@ export const saveTodayLineCheckin = async (
         throw new Error('At least one practice method must be selected');
     }
 
-    const today = moment().tz(TIMEZONE);
-    const todayStr = today.format('YYYY-MM-DD');
-    const yesterdayStr = today.clone().subtract(1, 'day').format('YYYY-MM-DD');
+    const leafCodesByParentCode = await getLeafCodesByParentCode();
     const client = await db.getClient();
 
     try {
         await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [lineUserId]);
+        const userSettings = await client.query(
+            `SELECT COALESCE(practice_timezone, 'Asia/Taipei') AS practice_timezone,
+                    COALESCE(practice_timezone_confirmed, FALSE) AS practice_timezone_confirmed
+             FROM users WHERE line_user_id = $1 FOR UPDATE`,
+            [lineUserId]
+        );
+        const practiceTimezone = userSettings.rows[0]?.practice_timezone || 'Asia/Taipei';
+        const settings = { ...getPracticeDateWindow(practiceTimezone), confirmed: Boolean(userSettings.rows[0]?.practice_timezone_confirmed) };
+        const target = validateCheckinDate(checkinDate, settings);
+        if (!settings.confirmed && target.entryKind === 'makeup') throw new Error('Confirm your practice timezone before making up yesterday');
 
         const methodRows = await client.query(
             `SELECT id, code, name_zh, method_type
@@ -250,80 +321,47 @@ export const saveTodayLineCheckin = async (
         const note = buildLegacyNote(methodNames, practiceNote);
 
         const existing = await client.query(
-            `SELECT id
+            `SELECT id, entry_kind, practice_timezone
              FROM checkin_logs
              WHERE line_user_id = $1 AND checkin_date = $2`,
-            [lineUserId, todayStr]
+            [lineUserId, target.checkinDate]
         );
 
         let checkinLogId: number;
         let alreadyCheckedIn = false;
-        let stats: { currentStreak: number; totalCheckins: number } | null = null;
+        let entryKind = target.entryKind;
+        let savedPracticeTimezone = settings.practiceTimezone;
 
         if (existing.rows.length > 0) {
             alreadyCheckedIn = true;
             checkinLogId = existing.rows[0].id;
+            entryKind = existing.rows[0].entry_kind === 'makeup' ? 'makeup' : 'regular';
+            savedPracticeTimezone = existing.rows[0].practice_timezone || savedPracticeTimezone;
 
             await client.query(
                 `UPDATE checkin_logs
                  SET practice_note = $1,
                      reflection_note = $1,
                      body_feeling_note = NULL,
-                     note = $2,
-                     source = 'liff',
-                     updated_at = CURRENT_TIMESTAMP
+                      note = $2,
+                      source = 'liff',
+                      practice_timezone = COALESCE(practice_timezone, $4),
+                      updated_at = CURRENT_TIMESTAMP
                  WHERE id = $3`,
-                [practiceNote || null, note || null, checkinLogId]
+                [practiceNote || null, note || null, checkinLogId, savedPracticeTimezone]
             );
 
             await client.query(`DELETE FROM checkin_method_selections WHERE checkin_log_id = $1`, [checkinLogId]);
 
-            const userStats = await client.query(
-                `SELECT current_streak, total_checkins FROM users WHERE line_user_id = $1`,
-                [lineUserId]
-            );
-            stats = {
-                currentStreak: userStats.rows[0]?.current_streak || 0,
-                totalCheckins: userStats.rows[0]?.total_checkins || 0
-            };
         } else {
-            const userRes = await client.query(
-                `SELECT current_streak, longest_streak, last_checkin_date, total_checkins
-                 FROM users WHERE line_user_id = $1`,
-                [lineUserId]
-            );
-            const user = userRes.rows[0] || { current_streak: 0, longest_streak: 0, last_checkin_date: null, total_checkins: 0 };
-
             const inserted = await client.query(
-                `INSERT INTO checkin_logs (line_user_id, checkin_date, practice_note, reflection_note, body_feeling_note, note, source)
-                 VALUES ($1, $2, $3, $3, NULL, $4, 'liff')
+                `INSERT INTO checkin_logs
+                    (line_user_id, checkin_date, practice_note, reflection_note, body_feeling_note, note, source, entry_kind, practice_timezone)
+                 VALUES ($1, $2, $3, $3, NULL, $4, 'liff', $5, $6)
                  RETURNING id`,
-                [lineUserId, todayStr, practiceNote || null, note || null]
+                [lineUserId, target.checkinDate, practiceNote || null, note || null, target.entryKind, settings.practiceTimezone]
             );
             checkinLogId = inserted.rows[0].id;
-
-            const lastCheckinDate = user.last_checkin_date ? moment(user.last_checkin_date).tz(TIMEZONE).format('YYYY-MM-DD') : null;
-            let newStreak = 1;
-            if (lastCheckinDate === yesterdayStr) {
-                newStreak = (user.current_streak || 0) + 1;
-            }
-            const newLongestStreak = Math.max(newStreak, user.longest_streak || 0);
-            const newTotal = (user.total_checkins || 0) + 1;
-
-            await client.query(
-                `UPDATE users
-                 SET current_streak = $1,
-                     longest_streak = $2,
-                     total_checkins = $3,
-                     last_checkin_date = $4
-                 WHERE line_user_id = $5`,
-                [newStreak, newLongestStreak, newTotal, todayStr, lineUserId]
-            );
-
-            stats = {
-                currentStreak: newStreak,
-                totalCheckins: newTotal
-            };
         }
 
         for (const methodId of uniqueMethodIds) {
@@ -335,15 +373,38 @@ export const saveTodayLineCheckin = async (
             );
         }
 
+        const stats = await recalculateLineUserStats(client, lineUserId, settings.practiceTimezone);
+        const beforeBadges = await client.query('SELECT badge_id, earned_year FROM user_badges WHERE line_user_id = $1', [lineUserId]);
+        const beforeBadgeKeys = new Set(beforeBadges.rows.map((row: any) => `${row.badge_id}:${row.earned_year}`));
+        await evaluateBadges(lineUserId, note, methodCodes, {
+            checkinDate: target.checkinDate,
+            entryKind,
+            practiceTimezone: savedPracticeTimezone,
+            queryable: client,
+            leafCodesByParentCode
+        });
+        const afterBadges = await client.query(
+            `SELECT ub.badge_id, ub.earned_year, b.name, b.emoji, b.description
+             FROM user_badges ub JOIN badges b ON b.id = ub.badge_id
+             WHERE ub.line_user_id = $1`,
+            [lineUserId]
+        );
+        const unlockedBadges = afterBadges.rows
+            .filter((row: any) => !beforeBadgeKeys.has(`${row.badge_id}:${row.earned_year}`))
+            .map((row: any) => ({ badgeId: row.badge_id, earnedYear: row.earned_year, name: row.name, emoji: row.emoji || '', description: row.description || '' }));
+
         await client.query('COMMIT');
 
         return {
-            date: todayStr,
+            date: target.checkinDate,
             checkinLogId,
             alreadyCheckedIn,
             selectedMethods: methodNames,
             selectedMethodCodes: methodCodes,
-            stats
+            stats,
+            entryKind,
+            practiceTimezone: savedPracticeTimezone,
+            unlockedBadges
         };
     } catch (error) {
         await client.query('ROLLBACK');
@@ -353,7 +414,69 @@ export const saveTodayLineCheckin = async (
     }
 };
 
-export const evaluateLineLiffBadges = async (lineUserId: string, selectedMethods: string[], selectedMethodCodes: string[] = []) => {
+export const saveTodayLineCheckin = async (lineUserId: string, methodIds: number[], practiceNote: string) =>
+    saveLineCheckin(lineUserId, methodIds, practiceNote);
+
+export const saveLegacyTextCheckin = async (lineUserId: string, note: string) => {
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [lineUserId]);
+        const userSettings = await client.query(
+            `SELECT COALESCE(practice_timezone, 'Asia/Taipei') AS practice_timezone
+             FROM users WHERE line_user_id = $1 FOR UPDATE`,
+            [lineUserId]
+        );
+        const practiceTimezone = userSettings.rows[0]?.practice_timezone || 'Asia/Taipei';
+        const settings = getPracticeDateWindow(practiceTimezone);
+        const existing = await client.query(
+            'SELECT id FROM checkin_logs WHERE line_user_id = $1 AND checkin_date = $2',
+            [lineUserId, settings.today]
+        );
+        if (existing.rows.length) {
+            const { rows } = await client.query(
+                `SELECT current_streak, longest_streak, total_checkins, last_checkin_date
+                 FROM users WHERE line_user_id = $1`,
+                [lineUserId]
+            );
+            await client.query('ROLLBACK');
+            const row = rows[0] || {};
+            return {
+                alreadyCheckedIn: true,
+                date: settings.today,
+                entryKind: 'regular' as const,
+                practiceTimezone: settings.practiceTimezone,
+                stats: {
+                    currentStreak: Number(row.current_streak || 0),
+                    longestStreak: Number(row.longest_streak || 0),
+                    totalCheckins: Number(row.total_checkins || 0),
+                    lastCheckinDate: row.last_checkin_date ? moment(row.last_checkin_date).format('YYYY-MM-DD') : null
+                }
+            };
+        }
+        await client.query(
+            `INSERT INTO checkin_logs
+                (line_user_id, checkin_date, note, practice_note, reflection_note, source, entry_kind, practice_timezone)
+             VALUES ($1, $2, $3, $3, $3, 'text', 'regular', $4)`,
+            [lineUserId, settings.today, note, settings.practiceTimezone]
+        );
+        const stats = await recalculateLineUserStats(client, lineUserId, settings.practiceTimezone);
+        await client.query('COMMIT');
+        return { alreadyCheckedIn: false, date: settings.today, entryKind: 'regular' as const, practiceTimezone: settings.practiceTimezone, stats };
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
+export const evaluateLineLiffBadges = async (
+    lineUserId: string,
+    selectedMethods: string[],
+    selectedMethodCodes: string[] = [],
+    context: { checkinDate?: string; entryKind?: 'regular' | 'makeup'; practiceTimezone?: string } = {}
+) => {
     const note = buildLegacyNote(selectedMethods);
-    await evaluateBadges(lineUserId, note, selectedMethodCodes);
+    await evaluateBadges(lineUserId, note, selectedMethodCodes, context);
 };
