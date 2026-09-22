@@ -443,3 +443,9 @@ The corresponding server routes also log load duration in milliseconds so interm
 - node-cron (for daily reminders)
 - lunar-javascript (for Solar Terms)
 - moment-timezone (for Asia/Taipei timezone handling)
+
+## 專案署名
+
+本專案由 **Bean, Bird & Badminton Tech Consulting** 開發並維護。
+
+Copyright (c) 2026 Bean, Bird & Badminton Tech Consulting. All rights reserved.
