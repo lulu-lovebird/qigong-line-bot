@@ -1,3 +1,4 @@
+import { askQigongRag, generateCheckinFeedback } from "./services/qigongRagService";
 import { messagingApi, webhook } from '@line/bot-sdk';
 import { db } from './db';
 import moment from 'moment-timezone';
@@ -431,9 +432,25 @@ export const handleEvent = async (event: webhook.Event): Promise<any> => {
         });
     }
 
+    // Try Qigong RAG Knowledge Base for natural language questions
+    const ragAnswer = await askQigongRag(text);
+    if (ragAnswer && ragAnswer.answer && !ragAnswer.answer.includes("在現有資料中找不到與您問題相關的資訊")) {
+        let reply = ragAnswer.answer;
+        if (ragAnswer.sources && ragAnswer.sources.length > 0) {
+            const validSources = ragAnswer.sources.filter(s => s.url && s.title);
+            if (validSources.length > 0) {
+                reply += "\n\n📚 參考文章：\n" + validSources.slice(0, 3).map(s => `• ${s.title}\n  ${s.url}`).join("\n");
+            }
+        }
+        return client.replyMessage({
+            replyToken,
+            messages: [{ type: 'text', text: reply }]
+        });
+    }
+
     // Fallback message
     return client.replyMessage({
         replyToken,
-        messages: [{ type: 'text', text: '抱歉，我不懂這個指令。請使用下方選單打卡喔！' }]
+        messages: [{ type: 'text', text: '抱歉，我不懂這個指令。請使用下方選單打卡，或直接輸入氣功相關問題進行詢問喔！' }]
     });
 };

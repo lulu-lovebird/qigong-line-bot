@@ -556,6 +556,12 @@
           });
         }
 
+                if (result.coachFeedback) {
+          summaryLines.push("");
+          summaryLines.push("💡【教練體感小解析】");
+          summaryLines.push(result.coachFeedback);
+        }
+
         const summaryText = summaryLines.join('\n');
 
         if (liff.isInClient()) {

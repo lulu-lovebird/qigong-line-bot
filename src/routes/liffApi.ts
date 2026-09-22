@@ -1,3 +1,4 @@
+import { generateCheckinFeedback } from '../services/qigongRagService';
 import { Request, Router } from 'express';
 import { getLineCheckinForDate, getPracticeMethods, getTodayLineCheckin, saveLineCheckin, upsertLineUser, mergeLegacyPracticeNotes } from '../services/lineCheckin';
 import { db } from '../db';
@@ -484,7 +485,11 @@ router.post('/checkin', requireVerifiedLineUser, async (req, res) => {
         });
 
         const saved = await saveLineCheckin(lineUserId, methodIds, practiceNote, req.body?.checkinDate);
-        res.json({ ok: true, ...saved });
+        let coachFeedback: string | null = null;
+        if (practiceNote && practiceNote.trim().length >= 3) {
+            coachFeedback = await generateCheckinFeedback(saved.selectedMethods, practiceNote);
+        }
+        res.json({ ok: true, ...saved, coachFeedback });
     } catch (error) {
         console.error('[liff-api] failed to save checkin', error);
         res.status(400).json({ error: error instanceof Error ? error.message : 'Failed to save check-in' });
