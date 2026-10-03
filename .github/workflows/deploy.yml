@@ -1,0 +1,44 @@
+name: Deploy Qigong LINE Bot to ubuntu1
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy-ubuntu1:
+    name: Auto Deploy to ubuntu1 (myhsu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect to Tailscale Network
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: SSH to ubuntu1 and Deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.UBUNTU1_HOST || 'ubuntu1' }}
+          username: ${{ secrets.UBUNTU1_USER || 'myhsu' }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            echo "=== 1. Entering project directory ==="
+            cd /home/myhsu/Devel/qigong-line-bot
+
+            echo "=== 2. Pulling latest code from GitHub ==="
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "=== 3. Installing dependencies & building TypeScript ==="
+            npm install
+            npm run build
+
+            echo "=== 4. Reloading PM2 process ==="
+            pm2 restart qigong-line-bot || pm2 restart all
+            pm2 save
+
+            echo "=== Deploy to ubuntu1 successfully completed! ==="
