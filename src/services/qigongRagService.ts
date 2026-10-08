@@ -71,8 +71,13 @@ export async function generateCheckinFeedback(
     // 1. Distill concise search query specifically for Vespa (e.g. "納氣功 丹田 溫熱")
     const searchQuery = distillSearchTerms(methodNames, note);
 
-    // 2. Instruction prompt for LLM
-    const instruction = '請以白雁氣功專業教練助教的角度，對學員今日練習的功法與體感心得進行簡短（約100~150字）、溫暖且具科學學理根據的鼓勵與分析回饋。若體感提到發熱、微汗、酸麻、排氣、打哈欠、丹田溫熱等反應，請結合氣功排濁、氣攻病灶或好轉反應原理給予適當解析。';
+    // 2. Instruction prompt for LLM with strict boundary guardrails
+    const instruction =
+        '請以白雁氣功專業教練助教的角度，對學員今日練習的功法與體感心得進行簡短（約100~150字）、溫暖且具科學學理根據的鼓勵與分析回饋。' +
+        '若體感提到發熱、微汗、酸麻、排氣、打哈欠、丹田溫熱等反應，請結合氣功排濁、氣攻病灶或好轉反應原理給予適當解析。' +
+        '【絕對遵循防護規範】：你在回覆中提及、稱讚或分析的功法名稱，必須 100% 嚴格限定在學員今日實際打卡的功法清單【' +
+        methodsText +
+        '】之內！參考資料若出現未勾選的其他功法（如龜壽功、回春功等），僅供參考生理解析原理，嚴禁在回覆中宣稱學員有練習、或將體感歸因於未勾選的功法。';
     
     // 3. Background context containing full notes
     const contextText = `學員今日打卡練習功法：【${methodsText}】\n學員體感與心得紀錄：${note}`;
