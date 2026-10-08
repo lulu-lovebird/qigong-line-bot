@@ -22,7 +22,7 @@ jobs:
       - name: SSH to ubuntu1 and Deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.UBUNTU1_HOST || 'ubuntu1' }}
+          host: ${{ secrets.UBUNTU1_HOST || '100.101.221.55' }}
           username: ${{ secrets.UBUNTU1_USER || 'myhsu' }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
